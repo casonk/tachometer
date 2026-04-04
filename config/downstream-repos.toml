@@ -1,0 +1,119 @@
+[[repos]]
+name = "traction-control"
+path = "./util-repos/traction-control"
+reason = "Portfolio control plane with cross-repo tooling conventions."
+
+[[repos]]
+name = "archility"
+path = "./util-repos/archility"
+reason = "Shared architecture toolchain that benefits from repo-level profiling baselines."
+
+[[repos]]
+name = "auto-pass"
+path = "./util-repos/auto-pass"
+reason = "Shared automation utility that can use the common profiling convention."
+
+[[repos]]
+name = "clockwork"
+path = "./util-repos/clockwork"
+reason = "Shared scheduler utility rolled into the same local profiling convention."
+
+[[repos]]
+name = "dyno-lab"
+path = "./util-repos/dyno-lab"
+reason = "Shared test bench utility where local resource snapshots are useful for heavier runs."
+
+[[repos]]
+name = "fedora-debugg"
+path = "./util-repos/fedora-debugg"
+reason = "Operational tooling repo that can record local snapshot baselines."
+
+[[repos]]
+name = "intake"
+path = "./util-repos/intake"
+reason = "Python utility repo with recurring local batch workloads."
+
+[[repos]]
+name = "nordility"
+path = "./util-repos/nordility"
+reason = "Automation utility repo adopting the portfolio profiling convention."
+
+[[repos]]
+name = "pit-box"
+path = "./util-repos/pit-box"
+reason = "Ops utility repo adopting the shared profiling convention."
+
+[[repos]]
+name = "shock-relay"
+path = "./util-repos/shock-relay"
+reason = "Messaging utility repo adopting the shared profiling convention."
+
+[[repos]]
+name = "short-circuit"
+path = "./util-repos/short-circuit"
+reason = "WireGuard utility repo adopting the shared profiling convention."
+
+[[repos]]
+name = "snowbridge"
+path = "./util-repos/snowbridge"
+reason = "File-sharing utility repo adopting the shared profiling convention."
+
+[[repos]]
+name = "terminility"
+path = "./util-repos/terminility"
+reason = "Shell utility repo adopting the shared profiling convention."
+
+[[repos]]
+name = "doseido"
+path = "./health-repos/doseido"
+reason = "Source repo for the original profiler contract and first direct code consumer."
+
+[[repos]]
+name = "personal-finance"
+path = "./personal-finance"
+reason = "Python workflow repo adopting the shared profiling convention."
+
+[[repos]]
+name = "citegres"
+path = "./research-repos/citegres"
+reason = "Research code repo adopting the shared profiling convention."
+
+[[repos]]
+name = "pushshift_python"
+path = "./research-repos/pushshift_python"
+reason = "Research code repo adopting the shared profiling convention."
+
+[[repos]]
+name = "sonetsim"
+path = "./research-repos/sonetsim"
+reason = "Python package repo adopting the shared profiling convention."
+
+[[repos]]
+name = "zillow-public-data"
+path = "./research-repos/zillow-public-data"
+reason = "Research data repo adopting the shared profiling convention."
+
+[[repos]]
+name = "casonk.github.io"
+path = "./doc-repos/casonk.github.io"
+reason = "Docs repo adopting the same local repo snapshot convention."
+
+[[repos]]
+name = "my-consent"
+path = "./doc-repos/my-consent"
+reason = "Docs repo adopting the same local repo snapshot convention."
+
+[[repos]]
+name = "Certifications"
+path = "./doc-repos/Certifications"
+reason = "Docs repo adopting the same local repo snapshot convention."
+
+[[repos]]
+name = "university-coursework"
+path = "./doc-repos/university-coursework"
+reason = "Archive-style repo adopting the same local repo snapshot convention."
+
+[[repos]]
+name = "drawio-templates"
+path = "./drawio-templates"
+reason = "Template repo adopting the same local repo snapshot convention."
