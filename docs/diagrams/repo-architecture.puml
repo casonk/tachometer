@@ -1,0 +1,31 @@
+@startuml
+title tachometer repo architecture
+
+skinparam packageStyle rectangle
+skinparam shadowing false
+skinparam defaultFontName Monospace
+
+package "src/tachometer" {
+  rectangle "model.py\nmanifest + snapshot dataclasses" as MODEL
+  rectangle "manifest.py\nTOML loading and path resolution" as MANIFEST
+  rectangle "profile.py\nresource snapshots, repo metrics,\nJSON persistence, summaries" as PROFILE
+  rectangle "cli.py\nsnapshot/run/summarize entrypoints" as CLI
+}
+
+folder "examples/\nreference manifests" as EXAMPLES
+folder "config/downstream-repos.toml\ntracked inventory" as DOWNSTREAM
+folder ".tachometer/\nlocal profile + summary outputs" as LOCAL
+folder "tests/\nunit coverage" as TESTS
+
+CLI --> MANIFEST : load manifest
+CLI --> PROFILE : invoke profiling action
+MANIFEST --> MODEL : build RepoManifest
+PROFILE --> MODEL : build ResourceSnapshot
+PROFILE --> LOCAL : write profile.json\nwrite summary.json
+EXAMPLES --> MANIFEST : reference shape
+DOWNSTREAM --> CLI : rollout context
+TESTS --> CLI
+TESTS --> PROFILE
+TESTS --> MANIFEST
+
+@enduml
