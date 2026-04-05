@@ -114,6 +114,11 @@ path = "./doc-repos/university-coursework"
 reason = "Archive-style repo adopting the same local repo snapshot convention."
 
 [[repos]]
+name = "crew-chief"
+path = "./util-repos/crew-chief"
+reason = "Python utility repo adopting the shared profiling convention."
+
+[[repos]]
 name = "drawio-templates"
 path = "./drawio-templates"
 reason = "Template repo adopting the same local repo snapshot convention."
