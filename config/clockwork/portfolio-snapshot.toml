@@ -1,0 +1,24 @@
+[[jobs]]
+name = "tachometer-portfolio-snapshot"
+description = "Collect resource and repo snapshots across all portfolio repos"
+scope = "user"
+service_type = "oneshot"
+working_directory = "/mnt/4tb-m2/git/util-repos/tachometer"
+exec_start = "/mnt/4tb-m2/git/util-repos/tachometer/scripts/run_all_tachometer_snapshots.sh"
+standard_output = "journal"
+standard_error = "journal"
+timer_description = "Run tachometer portfolio snapshot 4 times per day"
+
+[jobs.timer]
+kind = "calendar"
+on_calendar = "*-*-* 0,6,12,18:00:00"
+persistent = true
+randomized_delay_sec = "300"
+
+[jobs.cron]
+expression = "0 0,6,12,18 * * *"
+command = "/mnt/4tb-m2/git/util-repos/tachometer/scripts/run_all_tachometer_snapshots.sh >> /mnt/4tb-m2/git/util-repos/tachometer/.tachometer/cron.log 2>&1"
+comments = [
+  "Runs 4 times per day at midnight, 6am, noon, and 6pm.",
+  "Update /path/to/portfolio to your local checkout root before installing.",
+]
