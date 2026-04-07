@@ -77,6 +77,17 @@ When another repo needs local profiling or resource-utilization tracking,
 prefer integrating with `tachometer` instead of growing another repo-local
 profiler implementation.
 
+## Local CI Verification
+
+Run before every push:
+
+```bash
+pre-commit run --all-files
+pytest -q
+```
+
+Do not push changes that have not passed all checks locally.
+
 ## Agent Memory
 
 Use `./LESSONSLEARNED.md` as the tracked durable lessons file for this repo.
