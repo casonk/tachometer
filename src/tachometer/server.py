@@ -129,13 +129,14 @@ def _badge(light: str) -> str:
     )
 
 
-def _gauge(value: float | None, max_val: float, light: str) -> str:
+def _gauge(value: float | None, max_val: float, light: str, label: str | None = None) -> str:
     if value is None:
         return '<span style="color:#94a3b8">—</span>'
     pct = min(100.0, value / max_val * 100.0)
     c = _LIGHT_COLOR.get(light, "#94a3b8")
+    display = label if label is not None else f"{value:.1f}"
     return (
-        f'<div style="font-size:0.78rem">{value:.1f}</div>'
+        f'<div style="font-size:0.78rem">{display}</div>'
         f'<div style="width:80px;height:6px;background:#e2e8f0;border-radius:3px;margin-top:2px">'
         f'<div style="width:{pct:.1f}%;height:6px;background:{c};border-radius:3px"></div></div>'
     )
@@ -176,6 +177,12 @@ def _render_dashboard(repos: list[dict[str, Any]], port: int) -> str:
             f'<strong style="color:{dc}">{system_disk_pct:.1f}%</strong></span>'
         )
 
+    # Dynamic gauge scale — largest repo in portfolio = 100 % of bar width.
+    max_repo_bytes = max(
+        (r["summary"].get("latest_repo_size_bytes") or 0 for r in repos if r["has_data"]),
+        default=1,
+    ) or 1
+
     rows = []
     current_category = None
     for repo in repos:
@@ -183,7 +190,7 @@ def _render_dashboard(repos: list[dict[str, Any]], port: int) -> str:
         if cat != current_category:
             current_category = cat
             rows.append(
-                f'<tr><td colspan="6" style="background:#f1f5f9;font-size:0.7rem;'
+                f'<tr><td colspan="7" style="background:#f1f5f9;font-size:0.7rem;'
                 f'font-weight:700;color:#64748b;text-transform:uppercase;'
                 f'letter-spacing:.08em;padding:6px 14px">{cat}</td></tr>'
             )
@@ -191,7 +198,7 @@ def _render_dashboard(repos: list[dict[str, Any]], port: int) -> str:
         if not repo["has_data"]:
             rows.append(
                 f'<tr><td><strong>{repo["name"]}</strong></td>'
-                f'<td colspan="5" style="color:#94a3b8;font-size:0.8rem">No data — '
+                f'<td colspan="6" style="color:#94a3b8;font-size:0.8rem">No data — '
                 f'run ./scripts/run_tachometer_profile.sh snapshot</td></tr>'
             )
             continue
@@ -205,17 +212,16 @@ def _render_dashboard(repos: list[dict[str, Any]], port: int) -> str:
         cpu = metrics.get("cpu_percent")
         mem_ratio = metrics.get("memory_utilization_ratio")
         gpu = metrics.get("gpu_util_percent")
+        repo_size = metrics.get("repo_size_bytes")
 
         mem_pct = mem_ratio * 100 if mem_ratio is not None else None
 
         files = s.get("latest_git_tracked_file_count")
         dirty = s.get("latest_git_dirty_file_count")
-        size = _fmt_bytes(s.get("latest_repo_size_bytes"))
         dirty_span = (
             f', <span style="color:#ef4444">{int(dirty)}✗</span>' if dirty else ""
         )
         repo_cell = (
-            f'<div style="font-size:0.78rem">{size}</div>'
             f'<div style="font-size:0.7rem;color:#64748b">'
             f'{int(files) if files else "—"} tracked{dirty_span}</div>'
         )
@@ -227,6 +233,7 @@ def _render_dashboard(repos: list[dict[str, Any]], port: int) -> str:
             f'<td>{_gauge(cpu, 100, lights.get("cpu","unknown"))}</td>'
             f'<td>{_gauge(mem_pct, 100, lights.get("memory","unknown"))}</td>'
             f'<td>{_gauge(gpu, 100, lights.get("gpu","unknown"))}</td>'
+            f'<td>{_gauge(repo_size, max_repo_bytes, lights.get("repo_size","unknown"), label=_fmt_bytes(repo_size))}</td>'
             f'<td>{repo_cell}</td>'
             f'</tr>'
         )
@@ -279,7 +286,7 @@ def _render_dashboard(repos: list[dict[str, Any]], port: int) -> str:
 <tr>
   <th>Repository</th><th>Status</th>
   <th>CPU %</th><th>Memory %</th><th>GPU %</th>
-  <th>Repo</th>
+  <th>Repo Size</th><th>Repo</th>
 </tr>
 </thead>
 <tbody>
