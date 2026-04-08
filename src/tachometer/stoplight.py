@@ -13,6 +13,8 @@ DEFAULT_THRESHOLDS: dict[str, dict[str, float]] = {
     "memory_utilization_ratio": {"green_max": 0.70, "yellow_max": 0.85},
     "disk_utilization_ratio": {"green_max": 0.75, "yellow_max": 0.90},
     "gpu_util_percent": {"green_max": 50.0, "yellow_max": 80.0},
+    # Repo size: green < 1 GB, yellow 1–10 GB, red > 10 GB
+    "repo_size_bytes": {"green_max": 1e9, "yellow_max": 10e9},
 }
 
 
@@ -64,6 +66,7 @@ def evaluate(
     disk_used = summary.get("avg_disk_used_bytes")
     disk_total = summary.get("latest_disk_total_bytes")
     gpu = summary.get("avg_gpu_util_percent")
+    repo_size = summary.get("latest_repo_size_bytes")
 
     mem_ratio = (mem_used / mem_total) if (mem_used is not None and mem_total) else None
     disk_ratio = (disk_used / disk_total) if (disk_used is not None and disk_total) else None
@@ -73,6 +76,7 @@ def evaluate(
         "memory": light_max(mem_ratio, **t["memory_utilization_ratio"]),
         "disk": light_max(disk_ratio, **t["disk_utilization_ratio"]),
         "gpu": light_max(gpu, **t["gpu_util_percent"]),
+        "repo_size": light_max(repo_size, **t["repo_size_bytes"]),
     }
     overall = worst_light(lights)
 
@@ -82,6 +86,7 @@ def evaluate(
             "memory_utilization_ratio": mem_ratio,
             "disk_utilization_ratio": disk_ratio,
             "gpu_util_percent": gpu,
+            "repo_size_bytes": repo_size,
         },
         "lights": lights,
         "overall_light": overall,
