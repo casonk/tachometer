@@ -156,6 +156,26 @@ def _render_dashboard(repos: list[dict[str, Any]], port: int) -> str:
         "unknown": "Awaiting Data",
     }.get(system_light, "Awaiting Data")
 
+    # Disk is a system-level metric — identical for all repos on the same FS.
+    # Extract it once from the first repo that has data and show it in the banner.
+    system_disk_pct: float | None = None
+    system_disk_light = "unknown"
+    for r in repos:
+        if r["has_data"]:
+            dr = r["stoplight"].get("metrics", {}).get("disk_utilization_ratio")
+            if dr is not None:
+                system_disk_pct = dr * 100
+                system_disk_light = r["stoplight"].get("lights", {}).get("disk", "unknown")
+            break
+    disk_banner = ""
+    if system_disk_pct is not None:
+        dc = _LIGHT_COLOR.get(system_disk_light, "#94a3b8")
+        disk_banner = (
+            f'<span style="margin-left:18px;padding-left:18px;border-left:1px solid #e2e8f0;'
+            f'font-size:0.85rem;color:#475569">Disk&nbsp;'
+            f'<strong style="color:{dc}">{system_disk_pct:.1f}%</strong></span>'
+        )
+
     rows = []
     current_category = None
     for repo in repos:
@@ -163,7 +183,7 @@ def _render_dashboard(repos: list[dict[str, Any]], port: int) -> str:
         if cat != current_category:
             current_category = cat
             rows.append(
-                f'<tr><td colspan="7" style="background:#f1f5f9;font-size:0.7rem;'
+                f'<tr><td colspan="6" style="background:#f1f5f9;font-size:0.7rem;'
                 f'font-weight:700;color:#64748b;text-transform:uppercase;'
                 f'letter-spacing:.08em;padding:6px 14px">{cat}</td></tr>'
             )
@@ -171,7 +191,7 @@ def _render_dashboard(repos: list[dict[str, Any]], port: int) -> str:
         if not repo["has_data"]:
             rows.append(
                 f'<tr><td><strong>{repo["name"]}</strong></td>'
-                f'<td colspan="6" style="color:#94a3b8;font-size:0.8rem">No data — '
+                f'<td colspan="5" style="color:#94a3b8;font-size:0.8rem">No data — '
                 f'run ./scripts/run_tachometer_profile.sh snapshot</td></tr>'
             )
             continue
@@ -184,11 +204,9 @@ def _render_dashboard(repos: list[dict[str, Any]], port: int) -> str:
 
         cpu = metrics.get("cpu_percent")
         mem_ratio = metrics.get("memory_utilization_ratio")
-        disk_ratio = metrics.get("disk_utilization_ratio")
         gpu = metrics.get("gpu_util_percent")
 
         mem_pct = mem_ratio * 100 if mem_ratio is not None else None
-        disk_pct = disk_ratio * 100 if disk_ratio is not None else None
 
         files = s.get("latest_git_tracked_file_count")
         dirty = s.get("latest_git_dirty_file_count")
@@ -208,7 +226,6 @@ def _render_dashboard(repos: list[dict[str, Any]], port: int) -> str:
             f'<td>{_dot(overall)}{_badge(overall)}</td>'
             f'<td>{_gauge(cpu, 100, lights.get("cpu","unknown"))}</td>'
             f'<td>{_gauge(mem_pct, 100, lights.get("memory","unknown"))}</td>'
-            f'<td>{_gauge(disk_pct, 100, lights.get("disk","unknown"))}</td>'
             f'<td>{_gauge(gpu, 100, lights.get("gpu","unknown"))}</td>'
             f'<td>{repo_cell}</td>'
             f'</tr>'
@@ -255,12 +272,13 @@ def _render_dashboard(repos: list[dict[str, Any]], port: int) -> str:
 <div class="banner">
   <div class="bdot"></div>
   <div class="blabel">{system_label}</div>
+  {disk_banner}
 </div>
 <table>
 <thead>
 <tr>
   <th>Repository</th><th>Status</th>
-  <th>CPU %</th><th>Memory %</th><th>Disk % (sys)</th><th>GPU %</th>
+  <th>CPU %</th><th>Memory %</th><th>GPU %</th>
   <th>Repo</th>
 </tr>
 </thead>
