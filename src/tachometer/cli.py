@@ -61,6 +61,16 @@ def _summarize(args: argparse.Namespace) -> int:
     return 0
 
 
+def _serve(args: argparse.Namespace) -> int:
+    from pathlib import Path
+
+    from .server import serve
+
+    tachometer_root = Path(args.manifest).resolve().parent.parent
+    serve(tachometer_root, port=args.port)
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Shared repo and resource profiling helpers")
     subparsers = parser.add_subparsers(dest="subcommand", required=True)
@@ -80,6 +90,12 @@ def build_parser() -> argparse.ArgumentParser:
     summarize_parser = subparsers.add_parser("summarize", help="Print the current JSON summary")
     summarize_parser.add_argument("--manifest", required=True)
     summarize_parser.set_defaults(func=_summarize)
+
+    serve_parser = subparsers.add_parser("serve", help="Start the portfolio dashboard web server")
+    serve_parser.add_argument("--manifest", required=True, help="Path to tachometer profile.toml")
+    serve_parser.add_argument("--port", type=int, default=5100)
+    serve_parser.set_defaults(func=_serve)
+
     return parser
 
 
