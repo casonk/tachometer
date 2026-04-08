@@ -62,12 +62,10 @@ def _summarize(args: argparse.Namespace) -> int:
 
 
 def _serve(args: argparse.Namespace) -> int:
-    from pathlib import Path
-
     from .server import serve
 
-    tachometer_root = Path(args.manifest).resolve().parent.parent
-    serve(tachometer_root, port=args.port)
+    manifest = load_manifest(args.manifest)
+    serve(manifest.repo_root, port=args.port)
     return 0
 
 
