@@ -115,6 +115,7 @@ def _git_metrics(repo_root: Path) -> dict[str, int | None]:
         return [line for line in proc.stdout.splitlines() if line.strip()]
 
     tracked = run_git("ls-files")
+    non_ignored = run_git("ls-files", "--cached", "--others", "--exclude-standard")
     status_lines = run_git("status", "--short", "--untracked-files=all")
     if tracked is None and status_lines is None:
         return {}
@@ -130,10 +131,21 @@ def _git_metrics(repo_root: Path) -> dict[str, int | None]:
             else:
                 dirty_count += 1
 
+    def _sum_sizes(paths: list[str] | None) -> int | None:
+        if paths is None:
+            return None
+        total = 0
+        for rel in paths:
+            with contextlib.suppress(OSError):
+                total += (repo_root / rel).stat().st_size
+        return total
+
     return {
         "git_tracked_file_count": len(tracked) if tracked is not None else None,
         "git_dirty_file_count": dirty_count,
         "git_untracked_file_count": untracked_count,
+        "git_tracked_size_bytes": _sum_sizes(tracked),
+        "git_non_ignored_size_bytes": _sum_sizes(non_ignored),
     }
 
 
@@ -280,6 +292,8 @@ def summarize_samples(profile_path: str | Path) -> dict[str, Any]:
         "latest_git_tracked_file_count": _latest_numeric(samples, "git_tracked_file_count"),
         "latest_git_dirty_file_count": _latest_numeric(samples, "git_dirty_file_count"),
         "latest_git_untracked_file_count": _latest_numeric(samples, "git_untracked_file_count"),
+        "latest_git_tracked_size_bytes": _latest_numeric(samples, "git_tracked_size_bytes"),
+        "latest_git_non_ignored_size_bytes": _latest_numeric(samples, "git_non_ignored_size_bytes"),
     }
 
 
