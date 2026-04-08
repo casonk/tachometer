@@ -9,6 +9,7 @@ Usage (via CLI):
 """
 from __future__ import annotations
 
+import contextlib
 import json
 import time
 from http.server import BaseHTTPRequestHandler, HTTPServer
@@ -20,8 +21,8 @@ try:
 except ModuleNotFoundError:  # pragma: no cover - python < 3.11
     import tomli as tomllib  # type: ignore[no-redef]
 
-from .stoplight import backoff_action, evaluate as stoplight_evaluate, worst_light
-
+from .stoplight import backoff_action, worst_light
+from .stoplight import evaluate as stoplight_evaluate
 
 # ---------------------------------------------------------------------------
 # Data gathering
@@ -146,7 +147,7 @@ def _gauge(value: float | None, max_val: float, light: str) -> str:
 
 def _render_dashboard(repos: list[dict[str, Any]], port: int) -> str:
     all_lights = {r["stoplight"].get("overall_light", "unknown") for r in repos if r["has_data"]}
-    system_light = worst_light({i: l for i, l in enumerate(all_lights)})  # type: ignore[arg-type]
+    system_light = worst_light({i: light for i, light in enumerate(all_lights)})  # type: ignore[arg-type]
     system_color = _LIGHT_COLOR.get(system_light, "#94a3b8")
     system_label = {
         "green": "All Systems Normal",
@@ -259,7 +260,7 @@ def _render_dashboard(repos: list[dict[str, Any]], port: int) -> str:
 <thead>
 <tr>
   <th>Repository</th><th>Status</th>
-  <th>CPU %</th><th>Memory %</th><th>Disk %</th><th>GPU %</th>
+  <th>CPU %</th><th>Memory %</th><th>Disk % (sys)</th><th>GPU %</th>
   <th>Repo</th>
 </tr>
 </thead>
@@ -278,7 +279,7 @@ def _render_dashboard(repos: list[dict[str, Any]], port: int) -> str:
 
 def _build_api_payload(repos: list[dict[str, Any]]) -> dict[str, Any]:
     all_lights = {r["stoplight"].get("overall_light", "unknown") for r in repos if r["has_data"]}
-    system_light = worst_light({i: l for i, l in enumerate(all_lights)})  # type: ignore[arg-type]
+    system_light = worst_light({i: light for i, light in enumerate(all_lights)})  # type: ignore[arg-type]
     return {
         "timestamp": time.time(),
         "system_light": system_light,
@@ -335,7 +336,5 @@ def serve(tachometer_root: Path, port: int = 5100) -> None:
     print(f"Tachometer dashboard : http://localhost:{port}/")
     print(f"JSON status API      : http://localhost:{port}/api/status")
     print("Press Ctrl-C to stop.")
-    try:
+    with contextlib.suppress(KeyboardInterrupt):
         httpd.serve_forever()
-    except KeyboardInterrupt:
-        pass
