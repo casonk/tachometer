@@ -49,3 +49,5 @@ class ResourceSnapshot:
     git_tracked_file_count: int | None = None
     git_dirty_file_count: int | None = None
     git_untracked_file_count: int | None = None
+    git_tracked_size_bytes: int | None = None
+    git_non_ignored_size_bytes: int | None = None

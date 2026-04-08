@@ -177,7 +177,7 @@ def _render_dashboard(repos: list[dict[str, Any]], port: int) -> str:
             f'<strong style="color:{dc}">{system_disk_pct:.1f}%</strong></span>'
         )
 
-    # Dynamic gauge scale — largest repo in portfolio = 100 % of bar width.
+    # Dynamic gauge scale — largest total repo size in the portfolio = 100% bar width.
     max_repo_bytes = max(
         (r["summary"].get("latest_repo_size_bytes") or 0 for r in repos if r["has_data"]),
         default=1,
@@ -216,14 +216,30 @@ def _render_dashboard(repos: list[dict[str, Any]], port: int) -> str:
 
         mem_pct = mem_ratio * 100 if mem_ratio is not None else None
 
+        non_ignored_size = s.get("latest_git_non_ignored_size_bytes")
+        tracked_size = s.get("latest_git_tracked_size_bytes")
         files = s.get("latest_git_tracked_file_count")
         dirty = s.get("latest_git_dirty_file_count")
+
+        def _size_row(label: str, val: float | None, light: str = "unknown") -> str:
+            bar = _gauge(val, max_repo_bytes, light, label=_fmt_bytes(val))
+            return (
+                f'<div style="font-size:0.68rem;color:#94a3b8;margin-top:4px">{label}</div>'
+                f'{bar}'
+            )
+
         dirty_span = (
             f', <span style="color:#ef4444">{int(dirty)}✗</span>' if dirty else ""
         )
         repo_cell = (
             f'<div style="font-size:0.7rem;color:#64748b">'
             f'{int(files) if files else "—"} tracked{dirty_span}</div>'
+        )
+
+        size_cell = (
+            _size_row("total", repo_size, lights.get("repo_size", "unknown"))
+            + _size_row("non-ignored", non_ignored_size)
+            + _size_row("tracked", tracked_size)
         )
 
         rows.append(
@@ -233,7 +249,7 @@ def _render_dashboard(repos: list[dict[str, Any]], port: int) -> str:
             f'<td>{_gauge(cpu, 100, lights.get("cpu","unknown"))}</td>'
             f'<td>{_gauge(mem_pct, 100, lights.get("memory","unknown"))}</td>'
             f'<td>{_gauge(gpu, 100, lights.get("gpu","unknown"))}</td>'
-            f'<td>{_gauge(repo_size, max_repo_bytes, lights.get("repo_size","unknown"), label=_fmt_bytes(repo_size))}</td>'
+            f'<td>{size_cell}</td>'
             f'<td>{repo_cell}</td>'
             f'</tr>'
         )
