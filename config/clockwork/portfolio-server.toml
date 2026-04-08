@@ -1,0 +1,11 @@
+[[jobs]]
+name = "tachometer-dashboard"
+description = "Portfolio stoplight dashboard — serves gauge page at :5100"
+scope = "user"
+service_type = "simple"
+working_directory = "/mnt/4tb-m2/git/util-repos/tachometer"
+exec_start = "/mnt/4tb-m2/git/util-repos/tachometer/scripts/serve_tachometer.sh"
+restart = "on-failure"
+standard_output = "journal"
+standard_error = "journal"
+service_install_wanted_by = ["default.target"]
