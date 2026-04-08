@@ -21,7 +21,7 @@ try:
 except ModuleNotFoundError:  # pragma: no cover - python < 3.11
     import tomli as tomllib  # type: ignore[no-redef]
 
-from .stoplight import backoff_action, worst_light
+from .stoplight import DEFAULT_THRESHOLDS, backoff_action, light_max, worst_light
 from .stoplight import evaluate as stoplight_evaluate
 
 # ---------------------------------------------------------------------------
@@ -236,10 +236,11 @@ def _render_dashboard(repos: list[dict[str, Any]], port: int) -> str:
             f'{int(files) if files else "—"} tracked{dirty_span}</div>'
         )
 
+        _sz_t = DEFAULT_THRESHOLDS["repo_size_bytes"]
         size_cell = (
             _size_row("total", repo_size, lights.get("repo_size", "unknown"))
-            + _size_row("non-ignored", non_ignored_size)
-            + _size_row("tracked", tracked_size)
+            + _size_row("non-ignored", non_ignored_size, light_max(non_ignored_size, **_sz_t))
+            + _size_row("tracked", tracked_size, light_max(tracked_size, **_sz_t))
         )
 
         rows.append(
