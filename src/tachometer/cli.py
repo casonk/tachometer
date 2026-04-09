@@ -5,14 +5,19 @@ import json
 from collections.abc import Sequence
 from dataclasses import asdict
 
+from .backlog import update_backlog
 from .manifest import load_manifest
 from .profile import (
     append_profile_sample,
     collect_resource_snapshot,
     run_profiled_command,
+    summarize_delta_pairs,
+    summarize_run_records,
     summarize_samples,
     write_summary,
 )
+from .stoplight import evaluate as stoplight_evaluate
+from .stoplight import evaluate_delta, evaluate_process
 
 
 def _snapshot(args: argparse.Namespace) -> int:
@@ -27,6 +32,8 @@ def _snapshot(args: argparse.Namespace) -> int:
     )
     summary = summarize_samples(manifest.profile_path)
     write_summary(manifest.summary_path, summary)
+    backlog_path = manifest.profile_path.parent / "backlog.json"
+    update_backlog(backlog_path, "system", stoplight_evaluate(summary))
     print(json.dumps(payload, indent=2))
     return 0
 
@@ -49,6 +56,14 @@ def _run(args: argparse.Namespace) -> int:
         repo_metadata=manifest.repo_metadata(),
     )
     write_summary(manifest.summary_path, record["summary"])
+    backlog_path = manifest.profile_path.parent / "backlog.json"
+    update_backlog(backlog_path, "system", stoplight_evaluate(record["summary"]))
+    delta_summary = summarize_delta_pairs(manifest.profile_path)
+    if delta_summary.get("pair_count", 0) > 0:
+        update_backlog(backlog_path, "delta", evaluate_delta(delta_summary))
+    run_summary = summarize_run_records(manifest.profile_path)
+    if run_summary.get("qualifying_run_count", 0) > 0:
+        update_backlog(backlog_path, "process", evaluate_process(run_summary))
     print(json.dumps(record, indent=2))
     return int(record["returncode"])
 
