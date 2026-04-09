@@ -125,6 +125,7 @@ def gather_repo_data(tachometer_root: Path) -> list[dict[str, Any]]:
         "name": "tachometer",
         "path": "./util-repos/tachometer",
         "reason": "Self-profile.",
+        "run_command": "python3 -m pytest tests/ -q",
     })
 
     results = []
@@ -154,6 +155,8 @@ def gather_repo_data(tachometer_root: Path) -> list[dict[str, Any]]:
             "has_data": has_data,
             "has_delta": has_delta,
             "has_process": has_process,
+            "run_command": repo.get("run_command", ""),
+            "no_run_reason": repo.get("no_run_reason", ""),
             "summary": summary,
             "delta_summary": delta_summary,
             "run_summary": run_summary,
@@ -319,13 +322,24 @@ def _render_system_row(
     )
 
 
+def _no_run_cell(repo: dict[str, Any], colspan: int) -> str:
+    no_run_reason = repo.get("no_run_reason", "")
+    run_command = repo.get("run_command", "")
+    if no_run_reason:
+        msg = f'<span style="color:#94a3b8">{no_run_reason}</span>'
+    elif run_command:
+        msg = f'Awaiting first run &mdash; <code>{run_command}</code>'
+    else:
+        msg = 'No run command configured'
+    return (
+        f"<tr><td><strong>{repo['name']}</strong></td>"
+        f'<td colspan="{colspan}" style="font-size:0.8rem">{msg}</td></tr>'
+    )
+
+
 def _render_delta_row(repo: dict[str, Any]) -> str:
     if not repo["has_delta"]:
-        return (
-            f"<tr><td><strong>{repo['name']}</strong></td>"
-            f'<td colspan="4" style="color:#94a3b8;font-size:0.8rem">No pre/post pairs — '
-            f"run <code>tachometer run ...</code></td></tr>"
-        )
+        return _no_run_cell(repo, colspan=4)
 
     st = repo["stoplight_delta"]
     lights = st.get("lights", {})
@@ -359,11 +373,7 @@ def _render_delta_row(repo: dict[str, Any]) -> str:
 
 def _render_process_row(repo: dict[str, Any]) -> str:
     if not repo["has_process"]:
-        return (
-            f"<tr><td><strong>{repo['name']}</strong></td>"
-            f'<td colspan="5" style="color:#94a3b8;font-size:0.8rem">No psutil data — '
-            f"install psutil and run <code>tachometer run ...</code></td></tr>"
-        )
+        return _no_run_cell(repo, colspan=5)
 
     st = repo["stoplight_process"]
     lights = st.get("lights", {})
