@@ -29,6 +29,7 @@ try:
 except ModuleNotFoundError:  # pragma: no cover - python < 3.11
     import tomli as tomllib  # type: ignore[no-redef]
 
+from .backlog import load_backlog, open_items
 from .profile import summarize_delta_pairs, summarize_run_records
 from .stoplight import (
     DEFAULT_THRESHOLDS,
@@ -149,6 +150,7 @@ def gather_repo_data(tachometer_root: Path) -> list[dict[str, Any]]:
         has_process = run_summary.get("qualifying_run_count", 0) > 0
         stoplight_process = evaluate_process(run_summary) if has_process else {}
 
+        backlog = load_backlog(repo_dir / ".tachometer" / "backlog.json")
         results.append({
             "name": repo["name"],
             "category": _category_from_path(path_str),
@@ -163,6 +165,8 @@ def gather_repo_data(tachometer_root: Path) -> list[dict[str, Any]]:
             "stoplight_system": stoplight_system,
             "stoplight_delta": stoplight_delta,
             "stoplight_process": stoplight_process,
+            "backlog": backlog,
+            "backlog_open": len(open_items(backlog)),
         })
 
     return sorted(results, key=lambda r: (r["category"], r["name"]))
@@ -311,7 +315,7 @@ def _render_system_row(
 
     return (
         f"<tr>"
-        f"<td><strong>{repo['name']}</strong></td>"
+        f"<td>{_name_cell(repo)}</td>"
         f"<td>{_dot(overall)}{_badge(overall)}</td>"
         f"<td>{_gauge(cpu, 100, lights.get('cpu', 'unknown'))}</td>"
         f"<td>{_gauge(mem_pct, 100, lights.get('memory', 'unknown'))}</td>"
@@ -320,6 +324,21 @@ def _render_system_row(
         f"<td>{repo_cell}</td>"
         f"</tr>"
     )
+
+
+def _name_cell(repo: dict[str, Any]) -> str:
+    """Repo name with a red backlog badge when there are open items."""
+    name = repo["name"]
+    count = repo.get("backlog_open", 0)
+    if count:
+        badge = (
+            f'<span title="{count} open backlog item(s)" '
+            f'style="background:#ef4444;color:white;border-radius:10px;'
+            f'padding:1px 6px;font-size:0.65rem;font-weight:700;'
+            f'margin-left:6px;vertical-align:middle">{count}</span>'
+        )
+        return f"<strong>{name}</strong>{badge}"
+    return f"<strong>{name}</strong>"
 
 
 def _no_run_cell(repo: dict[str, Any], colspan: int) -> str:
@@ -332,7 +351,7 @@ def _no_run_cell(repo: dict[str, Any], colspan: int) -> str:
     else:
         msg = 'No run command configured'
     return (
-        f"<tr><td><strong>{repo['name']}</strong></td>"
+        f"<tr><td>{_name_cell(repo)}</td>"
         f'<td colspan="{colspan}" style="font-size:0.8rem">{msg}</td></tr>'
     )
 
@@ -361,7 +380,7 @@ def _render_delta_row(repo: dict[str, Any]) -> str:
 
     return (
         f"<tr>"
-        f"<td><strong>{repo['name']}</strong></td>"
+        f"<td>{_name_cell(repo)}</td>"
         f"<td>{_dot(overall)}{_badge(overall)}</td>"
         f"<td>{cpu_gauge}</td>"
         f"<td>{mem_gauge}</td>"
@@ -389,7 +408,7 @@ def _render_process_row(repo: dict[str, Any]) -> str:
 
     return (
         f"<tr>"
-        f"<td><strong>{repo['name']}</strong></td>"
+        f"<td>{_name_cell(repo)}</td>"
         f"<td>{_dot(overall)}{_badge(overall)}</td>"
         f"<td>{_gauge(avg_cpu, 100, lights.get('proc_avg_cpu', 'unknown'))}</td>"
         f"<td>{_gauge(peak_cpu, 100, lights.get('proc_peak_cpu', 'unknown'))}</td>"
@@ -528,7 +547,7 @@ def _render_dashboard(repos: list[dict[str, Any]], port: int, view: str = "syste
         if view == "system":
             if not repo["has_data"]:
                 rows.append(
-                    f"<tr><td><strong>{repo['name']}</strong></td>"
+                    f"<tr><td>{_name_cell(repo)}</td>"
                     f'<td colspan="{col_count - 1}" style="color:#94a3b8;font-size:0.8rem">No data — '
                     f"run ./scripts/run_tachometer_profile.sh snapshot</td></tr>"
                 )
@@ -631,6 +650,8 @@ def _build_api_payload(repos: list[dict[str, Any]]) -> dict[str, Any]:
                 "stoplight_system": r["stoplight_system"],
                 "stoplight_delta": r["stoplight_delta"],
                 "stoplight_process": r["stoplight_process"],
+                "backlog_open": r["backlog_open"],
+                "backlog": r["backlog"],
             }
             for r in repos
         ],
