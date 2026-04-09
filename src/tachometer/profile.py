@@ -3,6 +3,7 @@ from __future__ import annotations
 import contextlib
 import json
 import os
+import resource
 import shutil
 import subprocess
 import threading
@@ -115,13 +116,15 @@ def _monitor_process(
         return
     try:
         parent = _psutil.Process(pid)
-        # Primer call — establishes baseline; return value is always 0.0, discard it.
+        # Primer call — establishes cpu_percent baseline; always returns 0.0, discard.
         parent.cpu_percent(interval=None)
         for child in parent.children(recursive=True):
             with contextlib.suppress(_psutil.NoSuchProcess, _psutil.AccessDenied):
                 child.cpu_percent(interval=None)
-        while not stop.is_set():
-            time.sleep(interval)
+        while True:
+            # stop.wait is interruptible; returns True when stop fires, False on timeout.
+            stop_fired = stop.wait(interval)
+            # Always collect one sample — this guarantees data for short-lived processes.
             try:
                 procs = [parent] + parent.children(recursive=True)
                 cpu = sum(
@@ -136,6 +139,8 @@ def _monitor_process(
                 )
                 samples.append({"cpu_percent": cpu, "memory_rss_bytes": rss})
             except (_psutil.NoSuchProcess, _psutil.AccessDenied):
+                break
+            if stop_fired:
                 break
     except (_psutil.NoSuchProcess, _psutil.AccessDenied):
         pass
@@ -440,6 +445,8 @@ def run_profiled_command(
     )
 
     started = time.time()
+    # rusage snapshot before spawn — delta gives exact CPU time of the child tree.
+    _rusage_before = resource.getrusage(resource.RUSAGE_CHILDREN)
     proc = subprocess.Popen(
         command,
         cwd=str(cwd) if cwd else None,
@@ -465,6 +472,15 @@ def run_profiled_command(
     if _monitor_thread is not None:
         _monitor_thread.join(timeout=2.0)
 
+    # rusage after — captures CPU time even for processes too fast to psutil-sample.
+    _rusage_after = resource.getrusage(resource.RUSAGE_CHILDREN)
+    _cpu_time = (
+        (_rusage_after.ru_utime - _rusage_before.ru_utime)
+        + (_rusage_after.ru_stime - _rusage_before.ru_stime)
+    )
+    # ru_maxrss is in kilobytes on Linux.
+    _rusage_peak_rss = int(_rusage_after.ru_maxrss) * 1024
+
     if _proc_samples:
         cpu_vals = [s["cpu_percent"] for s in _proc_samples]
         rss_vals = [s["memory_rss_bytes"] for s in _proc_samples]
@@ -476,7 +492,15 @@ def run_profiled_command(
             "proc_sample_count": len(_proc_samples),
         }
     else:
-        proc_metrics = {}
+        # Fallback: derive avg CPU% from rusage wall-clock accounting.
+        _avg_cpu = round(_cpu_time / runtime * 100, 3) if runtime > 0 else 0.0
+        proc_metrics = {
+            "proc_avg_cpu_percent": _avg_cpu,
+            "proc_peak_cpu_percent": _avg_cpu,
+            "proc_avg_memory_rss_bytes": _rusage_peak_rss,
+            "proc_peak_memory_rss_bytes": _rusage_peak_rss,
+            "proc_sample_count": 0,
+        }
 
     end_snapshot = collect_resource_snapshot(path=path, repo_root=repo_root)
     append_profile_sample(
