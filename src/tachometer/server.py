@@ -33,6 +33,8 @@ from .backlog import load_backlog, open_items
 from .profile import summarize_delta_pairs, summarize_run_records
 from .stoplight import (
     DEFAULT_THRESHOLDS,
+    DELTA_THRESHOLDS,
+    PROCESS_THRESHOLDS,
     backoff_action,
     evaluate_delta,
     evaluate_process,
@@ -222,16 +224,43 @@ def _badge(light: str) -> str:
     )
 
 
-def _gauge(value: float | None, max_val: float, light: str, label: str | None = None) -> str:
+def _gauge(
+    value: float | None,
+    max_val: float,
+    light: str,
+    label: str | None = None,
+    green_max: float | None = None,
+    yellow_max: float | None = None,
+) -> str:
     if value is None:
         return '<span style="color:#94a3b8">—</span>'
     pct = min(100.0, value / max_val * 100.0)
     c = _LIGHT_COLOR.get(light, "#94a3b8")
     display = label if label is not None else f"{value:.1f}"
+
+    markers = ""
+    if green_max is not None and max_val > 0:
+        gp = min(100.0, green_max / max_val * 100.0)
+        markers += (
+            f'<div title="yellow threshold: {green_max}" style="position:absolute;top:-1px;'
+            f"left:{gp:.1f}%;width:1.5px;height:8px;background:#eab308;"
+            f'border-radius:1px;transform:translateX(-50%)"></div>'
+        )
+    if yellow_max is not None and max_val > 0:
+        yp = min(100.0, yellow_max / max_val * 100.0)
+        markers += (
+            f'<div title="red threshold: {yellow_max}" style="position:absolute;top:-1px;'
+            f"left:{yp:.1f}%;width:1.5px;height:8px;background:#ef4444;"
+            f'border-radius:1px;transform:translateX(-50%)"></div>'
+        )
+
     return (
         f'<div style="font-size:0.78rem">{display}</div>'
-        f'<div style="width:80px;height:6px;background:#e2e8f0;border-radius:3px;margin-top:2px">'
-        f'<div style="width:{pct:.1f}%;height:6px;background:{c};border-radius:3px"></div></div>'
+        f'<div style="position:relative;width:80px;height:6px;background:#e2e8f0;'
+        f'border-radius:3px;margin-top:2px;overflow:visible">'
+        f'<div style="width:{pct:.1f}%;height:6px;background:{c};border-radius:3px"></div>'
+        f"{markers}"
+        f"</div>"
     )
 
 
@@ -291,8 +320,13 @@ def _render_system_row(
     files = s.get("latest_git_tracked_file_count")
     dirty = s.get("latest_git_dirty_file_count")
 
+    _cpu_t = DEFAULT_THRESHOLDS["cpu_percent"]
+    _mem_t = DEFAULT_THRESHOLDS["memory_utilization_ratio"]
+    _gpu_t = DEFAULT_THRESHOLDS["gpu_util_percent"]
+    _sz_t  = DEFAULT_THRESHOLDS["repo_size_bytes"]
+
     def _size_row(label: str, val: float | None, light: str = "unknown") -> str:
-        bar = _gauge(val, max_repo_bytes, light, label=_fmt_bytes(val))
+        bar = _gauge(val, max_repo_bytes, light, label=_fmt_bytes(val), **_sz_t)
         return (
             f'<div style="font-size:0.68rem;color:#94a3b8;margin-top:4px">{label}</div>'
             f"{bar}"
@@ -306,20 +340,23 @@ def _render_system_row(
         f'{int(files) if files else "—"} tracked{dirty_span}</div>'
     )
 
-    _sz_t = DEFAULT_THRESHOLDS["repo_size_bytes"]
     size_cell = (
         _size_row("total", repo_size, lights.get("repo_size", "unknown"))
         + _size_row("non-ignored", non_ignored_size, light_max(non_ignored_size, **_sz_t))
         + _size_row("tracked", tracked_size, light_max(tracked_size, **_sz_t))
     )
 
+    # Memory thresholds are ratios (0-1); display is percent, so scale × 100.
+    mem_green = _mem_t["green_max"] * 100
+    mem_yellow = _mem_t["yellow_max"] * 100
+
     return (
         f"<tr>"
         f"<td>{_name_cell(repo)}</td>"
         f"<td>{_dot(overall)}{_badge(overall)}</td>"
-        f"<td>{_gauge(cpu, 100, lights.get('cpu', 'unknown'))}</td>"
-        f"<td>{_gauge(mem_pct, 100, lights.get('memory', 'unknown'))}</td>"
-        f"<td>{_gauge(gpu, 100, lights.get('gpu', 'unknown'))}</td>"
+        f"<td>{_gauge(cpu, 100, lights.get('cpu', 'unknown'), **_cpu_t)}</td>"
+        f"<td>{_gauge(mem_pct, 100, lights.get('memory', 'unknown'), green_max=mem_green, yellow_max=mem_yellow)}</td>"
+        f"<td>{_gauge(gpu, 100, lights.get('gpu', 'unknown'), **_gpu_t)}</td>"
         f"<td>{size_cell}</td>"
         f"<td>{repo_cell}</td>"
         f"</tr>"
@@ -374,9 +411,10 @@ def _render_delta_row(repo: dict[str, Any]) -> str:
     mem_label = f"{'+' if (mem or 0) >= 0 else ''}{_fmt_bytes(abs(mem) if mem else None)}" if mem is not None else None
     gpu_label = f"{'+' if (gpu or 0) >= 0 else ''}{gpu:.1f}%" if gpu is not None else None
 
-    cpu_gauge = _gauge(max(0.0, cpu) if cpu is not None else None, 100, lights.get("delta_cpu", "unknown"), label=cpu_label)
-    mem_gauge = _gauge(max(0.0, mem) if mem is not None else None, 2e9, lights.get("delta_memory", "unknown"), label=mem_label)
-    gpu_gauge = _gauge(max(0.0, gpu) if gpu is not None else None, 100, lights.get("delta_gpu", "unknown"), label=gpu_label)
+    _dt = DELTA_THRESHOLDS
+    cpu_gauge = _gauge(max(0.0, cpu) if cpu is not None else None, 100, lights.get("delta_cpu", "unknown"), label=cpu_label, **_dt["delta_cpu_percent"])
+    mem_gauge = _gauge(max(0.0, mem) if mem is not None else None, 2e9, lights.get("delta_memory", "unknown"), label=mem_label, **_dt["delta_memory_used_bytes"])
+    gpu_gauge = _gauge(max(0.0, gpu) if gpu is not None else None, 100, lights.get("delta_gpu", "unknown"), label=gpu_label, **_dt["delta_gpu_util_percent"])
 
     return (
         f"<tr>"
@@ -406,14 +444,15 @@ def _render_process_row(repo: dict[str, Any]) -> str:
     avg_rss = metrics.get("avg_proc_memory_rss_bytes")
     peak_rss = metrics.get("avg_proc_peak_memory_rss_bytes")
 
+    _pt = PROCESS_THRESHOLDS
     return (
         f"<tr>"
         f"<td>{_name_cell(repo)}</td>"
         f"<td>{_dot(overall)}{_badge(overall)}</td>"
-        f"<td>{_gauge(avg_cpu, 100, lights.get('proc_avg_cpu', 'unknown'))}</td>"
-        f"<td>{_gauge(peak_cpu, 100, lights.get('proc_peak_cpu', 'unknown'))}</td>"
-        f"<td>{_gauge(avg_rss, 4e9, lights.get('proc_avg_rss', 'unknown'), label=_fmt_bytes(avg_rss))}</td>"
-        f"<td>{_gauge(peak_rss, 4e9, lights.get('proc_peak_rss', 'unknown'), label=_fmt_bytes(peak_rss))}</td>"
+        f"<td>{_gauge(avg_cpu,  100, lights.get('proc_avg_cpu',  'unknown'), **_pt['proc_avg_cpu_percent'])}</td>"
+        f"<td>{_gauge(peak_cpu, 100, lights.get('proc_peak_cpu', 'unknown'), **_pt['proc_peak_cpu_percent'])}</td>"
+        f"<td>{_gauge(avg_rss,  4e9, lights.get('proc_avg_rss',  'unknown'), label=_fmt_bytes(avg_rss),  **_pt['proc_avg_memory_rss_bytes'])}</td>"
+        f"<td>{_gauge(peak_rss, 4e9, lights.get('proc_peak_rss', 'unknown'), label=_fmt_bytes(peak_rss), **_pt['proc_peak_memory_rss_bytes'])}</td>"
         f'<td style="color:#64748b;font-size:0.75rem">{qualifying} runs</td>'
         f"</tr>"
     )
