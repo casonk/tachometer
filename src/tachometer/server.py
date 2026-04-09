@@ -50,6 +50,7 @@ _RUN_STATE: dict[str, Any] = {
     "started_at": None,
     "last_exit": None,
     "last_finished": None,
+    "log_path": None,
 }
 
 
@@ -57,6 +58,7 @@ def _start_snapshot_run(tachometer_root: Path) -> bool:
     """Launch run_all_tachometer_snapshots.sh in the background.
 
     Returns True if the run was started, False if one is already in progress.
+    stdout+stderr are written to .tachometer/run-all.log for debugging.
     """
     with _RUN_LOCK:
         if _RUN_STATE["running"]:
@@ -65,16 +67,20 @@ def _start_snapshot_run(tachometer_root: Path) -> bool:
         _RUN_STATE["started_at"] = time.time()
         _RUN_STATE["last_exit"] = None
 
+    log_path = tachometer_root / ".tachometer" / "run-all.log"
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    _RUN_STATE["log_path"] = log_path
     script = tachometer_root / "scripts" / "run_all_tachometer_snapshots.sh"
 
     def _run() -> None:
-        proc = subprocess.Popen(
-            ["bash", str(script)],
-            cwd=str(tachometer_root),
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-        )
-        proc.wait()
+        with open(log_path, "w", encoding="utf-8") as log_f:
+            proc = subprocess.Popen(
+                ["bash", str(script)],
+                cwd=str(tachometer_root),
+                stdout=log_f,
+                stderr=subprocess.STDOUT,
+            )
+            proc.wait()
         with _RUN_LOCK:
             _RUN_STATE["running"] = False
             _RUN_STATE["last_exit"] = proc.returncode
@@ -384,30 +390,56 @@ def _render_process_row(repo: dict[str, Any]) -> str:
     )
 
 
+def _tail_log(log_path: Path | None, lines: int = 1) -> str:
+    """Return the last N non-empty lines from a log file, HTML-escaped."""
+    if not log_path or not log_path.exists():
+        return ""
+    try:
+        text = log_path.read_text(encoding="utf-8", errors="replace")
+        tail = [ln for ln in text.splitlines() if ln.strip()][-lines:]
+        return " &mdash; ".join(
+            ln.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+            for ln in tail
+        )
+    except OSError:
+        return ""
+
+
 def _run_button(view: str = "system") -> str:
     """Render the 'Run All Snapshots' button with current run state."""
     running = _RUN_STATE["running"]
     last_exit = _RUN_STATE["last_exit"]
     last_finished = _RUN_STATE["last_finished"]
     started_at = _RUN_STATE["started_at"]
+    log_path: Path | None = _RUN_STATE["log_path"]
 
     if running:
         elapsed = int(time.time() - (started_at or time.time()))
         label = f"Running\u2026 {elapsed}s"
         btn_style = "background:#94a3b8;color:white;cursor:not-allowed"
         disabled = "disabled"
+        last_line = _tail_log(log_path)
+        status = (
+            f'<span style="color:#94a3b8;font-size:0.72rem;margin-left:10px">'
+            f"{last_line}</span>"
+            if last_line else ""
+        )
     else:
         label = "Run All Snapshots"
         btn_style = "background:#1e293b;color:#e2e8f0;cursor:pointer"
         disabled = ""
-
-    status = ""
-    if not running and last_finished is not None:
-        finished_str = time.strftime("%H:%M:%S", time.localtime(last_finished))
-        if last_exit == 0:
-            status = f'<span style="color:#22c55e;font-size:0.75rem;margin-left:10px">\u2713 OK at {finished_str}</span>'
-        else:
-            status = f'<span style="color:#ef4444;font-size:0.75rem;margin-left:10px">\u2717 Failed (exit {last_exit}) at {finished_str}</span>'
+        status = ""
+        if last_finished is not None:
+            finished_str = time.strftime("%H:%M:%S", time.localtime(last_finished))
+            if last_exit == 0:
+                status = f'<span style="color:#22c55e;font-size:0.75rem;margin-left:10px">\u2713 OK at {finished_str}</span>'
+            else:
+                last_line = _tail_log(log_path)
+                detail = f" &mdash; {last_line}" if last_line else ""
+                status = (
+                    f'<span style="color:#ef4444;font-size:0.75rem;margin-left:10px">'
+                    f"\u2717 Failed (exit {last_exit}) at {finished_str}{detail}</span>"
+                )
 
     return (
         f'<form method="POST" action="/api/run-all?view={view}" style="display:inline">'
@@ -502,13 +534,14 @@ def _render_dashboard(repos: list[dict[str, Any]], port: int, view: str = "syste
     tab_bar = _tab_bar(view, port)
     view_desc = _VIEW_DESCRIPTIONS[view]
     run_btn = _run_button(view)
+    refresh_interval = 3 if _RUN_STATE["running"] else 60
 
     return f"""<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<meta http-equiv="refresh" content="60">
+<meta http-equiv="refresh" content="{refresh_interval}">
 <title>Tachometer — Portfolio Dashboard</title>
 <style>
   *{{box-sizing:border-box;margin:0;padding:0}}
