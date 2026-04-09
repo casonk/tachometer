@@ -10,6 +10,8 @@ from tachometer.profile import (
     append_profile_sample,
     collect_resource_snapshot,
     run_profiled_command,
+    summarize_delta_pairs,
+    summarize_run_records,
     summarize_samples,
 )
 
@@ -102,3 +104,96 @@ def test_run_profiled_command_writes_samples_and_run_record(tmp_path: Path):
     assert len(data["samples"]) == 2
     assert len(data["runs"]) == 1
     assert "ok" in data["runs"][0]["stdout_tail"]
+
+
+def test_summarize_delta_pairs_no_file(tmp_path: Path):
+    result = summarize_delta_pairs(tmp_path / "missing.json")
+    assert result == {"pair_count": 0}
+
+
+def test_summarize_delta_pairs_no_pairs(tmp_path: Path):
+    # Snapshot-only profile — all samples lack phase
+    profile_path = tmp_path / "profile.json"
+    profile_path.write_text(
+        json.dumps({"samples": [{"cpu_percent": 10.0}], "runs": []}),
+        encoding="utf-8",
+    )
+    result = summarize_delta_pairs(profile_path)
+    assert result == {"pair_count": 0}
+
+
+def test_summarize_delta_pairs_matched_pairs(tmp_path: Path):
+    profile_path = tmp_path / "profile.json"
+    samples = [
+        {"name": "build", "phase": "pre",  "cpu_percent": 10.0, "memory_used_bytes": 1000},
+        {"name": "build", "phase": "post", "cpu_percent": 30.0, "memory_used_bytes": 1500},
+        {"name": "build", "phase": "pre",  "cpu_percent": 20.0, "memory_used_bytes": 2000},
+        {"name": "build", "phase": "post", "cpu_percent": 50.0, "memory_used_bytes": 3000},
+    ]
+    profile_path.write_text(json.dumps({"samples": samples, "runs": []}), encoding="utf-8")
+
+    result = summarize_delta_pairs(profile_path)
+
+    assert result["pair_count"] == 2
+    # avg delta cpu: ((30-10) + (50-20)) / 2 = 25.0
+    assert result["avg_delta_cpu_percent"] == 25.0
+    # avg delta memory: ((1500-1000) + (3000-2000)) / 2 = 750.0
+    assert result["avg_delta_memory_used_bytes"] == 750.0
+
+
+def test_summarize_delta_pairs_unmatched_pre_ignored(tmp_path: Path):
+    profile_path = tmp_path / "profile.json"
+    samples = [
+        {"name": "test", "phase": "pre",  "cpu_percent": 5.0},
+        # no matching post
+    ]
+    profile_path.write_text(json.dumps({"samples": samples, "runs": []}), encoding="utf-8")
+    result = summarize_delta_pairs(profile_path)
+    assert result == {"pair_count": 0}
+
+
+def test_summarize_run_records_no_file(tmp_path: Path):
+    result = summarize_run_records(tmp_path / "missing.json")
+    assert result["run_count"] == 0
+    assert result["qualifying_run_count"] == 0
+
+
+def test_summarize_run_records_no_psutil_data(tmp_path: Path):
+    profile_path = tmp_path / "profile.json"
+    profile_path.write_text(
+        json.dumps({"samples": [], "runs": [{"returncode": 0}]}),
+        encoding="utf-8",
+    )
+    result = summarize_run_records(profile_path)
+    assert result["run_count"] == 1
+    assert result["qualifying_run_count"] == 0
+
+
+def test_summarize_run_records_aggregates_psutil(tmp_path: Path):
+    profile_path = tmp_path / "profile.json"
+    runs = [
+        {
+            "returncode": 0,
+            "proc_avg_cpu_percent": 20.0,
+            "proc_peak_cpu_percent": 40.0,
+            "proc_avg_memory_rss_bytes": 100e6,
+            "proc_peak_memory_rss_bytes": 200e6,
+        },
+        {
+            "returncode": 0,
+            "proc_avg_cpu_percent": 40.0,
+            "proc_peak_cpu_percent": 80.0,
+            "proc_avg_memory_rss_bytes": 300e6,
+            "proc_peak_memory_rss_bytes": 400e6,
+        },
+    ]
+    profile_path.write_text(json.dumps({"samples": [], "runs": runs}), encoding="utf-8")
+
+    result = summarize_run_records(profile_path)
+
+    assert result["run_count"] == 2
+    assert result["qualifying_run_count"] == 2
+    assert result["avg_proc_cpu_percent"] == 30.0
+    assert result["avg_proc_peak_cpu_percent"] == 60.0
+    assert result["avg_proc_memory_rss_bytes"] == 200e6
+    assert result["avg_proc_peak_memory_rss_bytes"] == 300e6

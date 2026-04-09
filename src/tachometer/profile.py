@@ -5,12 +5,20 @@ import json
 import os
 import shutil
 import subprocess
+import threading
 import time
 from dataclasses import asdict
 from pathlib import Path
 from typing import Any
 
 from .model import ResourceSnapshot
+
+try:
+    import psutil as _psutil  # type: ignore[import-not-found]
+    _PSUTIL_AVAILABLE = True
+except ImportError:
+    _psutil = None  # type: ignore[assignment]
+    _PSUTIL_AVAILABLE = False
 
 SKIP_DIR_NAMES = {
     ".git",
@@ -94,6 +102,43 @@ def _gpu_snapshot() -> dict[str, Any]:
         }
     except Exception:
         return {"gpu_detected": True}
+
+
+def _monitor_process(
+    pid: int,
+    samples: list[dict[str, float]],
+    stop: threading.Event,
+    interval: float = 0.25,
+) -> None:
+    """Background thread: sample CPU and RSS of a process tree via psutil."""
+    if not _PSUTIL_AVAILABLE or _psutil is None:
+        return
+    try:
+        parent = _psutil.Process(pid)
+        # Primer call — establishes baseline; return value is always 0.0, discard it.
+        parent.cpu_percent(interval=None)
+        for child in parent.children(recursive=True):
+            with contextlib.suppress(_psutil.NoSuchProcess, _psutil.AccessDenied):
+                child.cpu_percent(interval=None)
+        while not stop.is_set():
+            time.sleep(interval)
+            try:
+                procs = [parent] + parent.children(recursive=True)
+                cpu = sum(
+                    p.cpu_percent(interval=None)
+                    for p in procs
+                    if p.is_running()
+                )
+                rss = sum(
+                    p.memory_info().rss
+                    for p in procs
+                    if p.is_running()
+                )
+                samples.append({"cpu_percent": cpu, "memory_rss_bytes": rss})
+            except (_psutil.NoSuchProcess, _psutil.AccessDenied):
+                break
+    except (_psutil.NoSuchProcess, _psutil.AccessDenied):
+        pass
 
 
 def _git_metrics(repo_root: Path) -> dict[str, int | None]:
@@ -303,6 +348,79 @@ def write_summary(summary_path: str | Path, summary: dict[str, Any]) -> None:
     summary_path.write_text(json.dumps(summary, indent=2), encoding="utf-8")
 
 
+def summarize_delta_pairs(profile_path: str | Path) -> dict[str, Any]:
+    """Compute resource deltas from matched pre/post sample pairs.
+
+    Pairs are matched sequentially per name: each 'post' sample consumes the
+    most recent 'pre' sample with the same name.  Snapshot-only profiles that
+    lack pre/post pairs return ``{"pair_count": 0}``.
+    """
+    profile_path = Path(profile_path)
+    if not profile_path.exists():
+        return {"pair_count": 0}
+
+    data = _load_profile_document(profile_path)
+    samples = data.get("samples", [])
+
+    pending_pre: dict[str, dict[str, Any]] = {}
+    deltas: list[dict[str, Any]] = []
+    for sample in samples:
+        name = sample.get("name", "")
+        phase = sample.get("phase", "")
+        if phase == "pre":
+            pending_pre[name] = sample
+        elif phase == "post" and name in pending_pre:
+            pre = pending_pre.pop(name)
+            delta: dict[str, Any] = {}
+            for key in ("cpu_percent", "memory_used_bytes", "gpu_util_percent"):
+                pv, sv = pre.get(key), sample.get(key)
+                if isinstance(pv, (int, float)) and isinstance(sv, (int, float)):
+                    delta[key] = sv - pv
+            if delta:
+                deltas.append(delta)
+
+    if not deltas:
+        return {"pair_count": 0}
+
+    def _avg_delta(key: str) -> float | None:
+        vals = [d[key] for d in deltas if isinstance(d.get(key), (int, float))]
+        return round(sum(vals) / len(vals), 3) if vals else None
+
+    return {
+        "pair_count": len(deltas),
+        "avg_delta_cpu_percent": _avg_delta("cpu_percent"),
+        "avg_delta_memory_used_bytes": _avg_delta("memory_used_bytes"),
+        "avg_delta_gpu_util_percent": _avg_delta("gpu_util_percent"),
+    }
+
+
+def summarize_run_records(profile_path: str | Path) -> dict[str, Any]:
+    """Aggregate per-process metrics from run records that include psutil data."""
+    profile_path = Path(profile_path)
+    if not profile_path.exists():
+        return {"run_count": 0, "qualifying_run_count": 0}
+
+    data = _load_profile_document(profile_path)
+    runs = data.get("runs", [])
+    qualifying = [r for r in runs if "proc_avg_cpu_percent" in r]
+
+    if not qualifying:
+        return {"run_count": len(runs), "qualifying_run_count": 0}
+
+    def _qa(key: str) -> float | None:
+        vals = [r[key] for r in qualifying if isinstance(r.get(key), (int, float))]
+        return round(sum(vals) / len(vals), 3) if vals else None
+
+    return {
+        "run_count": len(runs),
+        "qualifying_run_count": len(qualifying),
+        "avg_proc_cpu_percent": _qa("proc_avg_cpu_percent"),
+        "avg_proc_peak_cpu_percent": _qa("proc_peak_cpu_percent"),
+        "avg_proc_memory_rss_bytes": _qa("proc_avg_memory_rss_bytes"),
+        "avg_proc_peak_memory_rss_bytes": _qa("proc_peak_memory_rss_bytes"),
+    }
+
+
 def run_profiled_command(
     *,
     name: str,
@@ -322,13 +440,43 @@ def run_profiled_command(
     )
 
     started = time.time()
-    proc = subprocess.run(
+    proc = subprocess.Popen(
         command,
         cwd=str(cwd) if cwd else None,
-        capture_output=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
         text=True,
     )
+
+    _proc_samples: list[dict[str, float]] = []
+    _stop_event = threading.Event()
+    _monitor_thread: threading.Thread | None = None
+    if _PSUTIL_AVAILABLE:
+        _monitor_thread = threading.Thread(
+            target=_monitor_process,
+            args=(proc.pid, _proc_samples, _stop_event),
+            daemon=True,
+        )
+        _monitor_thread.start()
+
+    stdout, stderr = proc.communicate()
     runtime = round(time.time() - started, 3)
+    _stop_event.set()
+    if _monitor_thread is not None:
+        _monitor_thread.join(timeout=2.0)
+
+    if _proc_samples:
+        cpu_vals = [s["cpu_percent"] for s in _proc_samples]
+        rss_vals = [s["memory_rss_bytes"] for s in _proc_samples]
+        proc_metrics: dict[str, Any] = {
+            "proc_avg_cpu_percent": round(sum(cpu_vals) / len(cpu_vals), 3),
+            "proc_peak_cpu_percent": round(max(cpu_vals), 3),
+            "proc_avg_memory_rss_bytes": int(sum(rss_vals) / len(rss_vals)),
+            "proc_peak_memory_rss_bytes": int(max(rss_vals)),
+            "proc_sample_count": len(_proc_samples),
+        }
+    else:
+        proc_metrics = {}
 
     end_snapshot = collect_resource_snapshot(path=path, repo_root=repo_root)
     append_profile_sample(
@@ -349,9 +497,10 @@ def run_profiled_command(
         "cwd": str(cwd) if cwd else None,
         "returncode": proc.returncode,
         "runtime_seconds": runtime,
-        "stdout_tail": proc.stdout[-capture_output_bytes:] if capture_output_bytes else "",
-        "stderr_tail": proc.stderr[-capture_output_bytes:] if capture_output_bytes else "",
+        "stdout_tail": stdout[-capture_output_bytes:] if capture_output_bytes else "",
+        "stderr_tail": stderr[-capture_output_bytes:] if capture_output_bytes else "",
         "summary": summary,
+        **proc_metrics,
     }
     append_run_record(profile_path, record, repo_metadata=repo_metadata)
     return record
