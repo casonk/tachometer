@@ -405,15 +405,22 @@ def summarize_delta_pairs(profile_path: str | Path) -> dict[str, Any]:
     }
 
 
+_RUN_WINDOW = 10  # number of most-recent qualifying runs to aggregate
+
+
 def summarize_run_records(profile_path: str | Path) -> dict[str, Any]:
-    """Aggregate per-process metrics from run records that include psutil data."""
+    """Aggregate per-process metrics from the most recent qualifying run records.
+
+    Only the last ``_RUN_WINDOW`` runs that contain psutil data are used so
+    that stale or pre-normalisation records age out naturally.
+    """
     profile_path = Path(profile_path)
     if not profile_path.exists():
         return {"run_count": 0, "qualifying_run_count": 0}
 
     data = _load_profile_document(profile_path)
     runs = data.get("runs", [])
-    qualifying = [r for r in runs if "proc_avg_cpu_percent" in r]
+    qualifying = [r for r in runs if "proc_avg_cpu_percent" in r][-_RUN_WINDOW:]
 
     if not qualifying:
         return {"run_count": len(runs), "qualifying_run_count": 0}
