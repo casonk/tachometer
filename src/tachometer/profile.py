@@ -111,9 +111,14 @@ def _monitor_process(
     stop: threading.Event,
     interval: float = 0.25,
 ) -> None:
-    """Background thread: sample CPU and RSS of a process tree via psutil."""
+    """Background thread: sample CPU and RSS of a process tree via psutil.
+
+    cpu_percent values are normalised by logical CPU count so they represent
+    0–100 % of total system capacity rather than per-core percentages.
+    """
     if not _PSUTIL_AVAILABLE or _psutil is None:
         return
+    cpu_count = _psutil.cpu_count(logical=True) or 1
     try:
         parent = _psutil.Process(pid)
         # Primer call — establishes cpu_percent baseline; always returns 0.0, discard.
@@ -127,11 +132,12 @@ def _monitor_process(
             # Always collect one sample — this guarantees data for short-lived processes.
             try:
                 procs = [parent] + parent.children(recursive=True)
-                cpu = sum(
+                raw_cpu = sum(
                     p.cpu_percent(interval=None)
                     for p in procs
                     if p.is_running()
                 )
+                cpu = raw_cpu / cpu_count  # normalise to 0–100 % of total capacity
                 rss = sum(
                     p.memory_info().rss
                     for p in procs
@@ -492,8 +498,10 @@ def run_profiled_command(
             "proc_sample_count": len(_proc_samples),
         }
     else:
-        # Fallback: derive avg CPU% from rusage wall-clock accounting.
-        _avg_cpu = round(_cpu_time / runtime * 100, 3) if runtime > 0 else 0.0
+        # Fallback: derive avg CPU% from rusage wall-clock accounting,
+        # normalised by cpu_count to match the psutil path (0–100 % of total capacity).
+        _cpu_count = os.cpu_count() or 1
+        _avg_cpu = round(_cpu_time / runtime * 100 / _cpu_count, 3) if runtime > 0 else 0.0
         proc_metrics = {
             "proc_avg_cpu_percent": _avg_cpu,
             "proc_peak_cpu_percent": _avg_cpu,
