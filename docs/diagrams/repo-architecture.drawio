@@ -1,59 +1,120 @@
+<?xml version='1.0' encoding='utf-8'?>
 <mxfile host="app.diagrams.net" modified="2026-04-04T00:00:00.000Z" agent="Codex" version="24.7.17">
   <diagram id="repo-architecture" name="Page-1">
     <mxGraphModel dx="1180" dy="740" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1100" pageHeight="850" math="0" shadow="0">
       <root>
         <mxCell id="0" />
         <mxCell id="1" parent="0" />
-        <mxCell id="2" value="clockwork&#xa;shared scheduler repo" style="rounded=1;whiteSpace=wrap;html=1;overflow=hidden;fillColor=#dae8fc;strokeColor=#6c8ebf;fontStyle=1;" vertex="1" parent="1">
+        <mxCell id="2" value="clockwork&#10;shared scheduler repo" style="rounded=1;whiteSpace=wrap;html=1;overflow=hidden;fillColor=#dae8fc;strokeColor=#6c8ebf;fontStyle=1;" vertex="1" parent="1">
           <mxGeometry x="390" y="30" width="320" height="70" as="geometry" />
         </mxCell>
-        <mxCell id="3" value="manifest.py&#xa;TOML loading + validation" style="rounded=1;whiteSpace=wrap;html=1;overflow=hidden;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" parent="1">
+        <mxCell id="3" value="manifest.py&#10;TOML loading + validation" style="rounded=1;whiteSpace=wrap;html=1;overflow=hidden;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" parent="1">
           <mxGeometry x="80" y="170" width="240" height="70" as="geometry" />
         </mxCell>
-        <mxCell id="4" value="model.py&#xa;scheduler dataclasses" style="rounded=1;whiteSpace=wrap;html=1;overflow=hidden;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" parent="1">
+        <mxCell id="4" value="model.py&#10;scheduler dataclasses" style="rounded=1;whiteSpace=wrap;html=1;overflow=hidden;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" parent="1">
           <mxGeometry x="430" y="170" width="240" height="70" as="geometry" />
         </mxCell>
-        <mxCell id="5" value="render.py&#xa;systemd + cron renderers" style="rounded=1;whiteSpace=wrap;html=1;overflow=hidden;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" parent="1">
+        <mxCell id="5" value="render.py&#10;systemd + cron renderers" style="rounded=1;whiteSpace=wrap;html=1;overflow=hidden;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" parent="1">
           <mxGeometry x="780" y="170" width="240" height="70" as="geometry" />
         </mxCell>
-        <mxCell id="6" value="examples/&#xa;downstream scheduler mappings" style="rounded=1;whiteSpace=wrap;html=1;overflow=hidden;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" parent="1">
+        <mxCell id="6" value="examples/&#10;downstream scheduler mappings" style="rounded=1;whiteSpace=wrap;html=1;overflow=hidden;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" parent="1">
           <mxGeometry x="80" y="320" width="250" height="70" as="geometry" />
         </mxCell>
-        <mxCell id="7" value="systemd outputs&#xa;.service / .timer files" style="rounded=1;whiteSpace=wrap;html=1;overflow=hidden;fillColor=#f8cecc;strokeColor=#b85450;" vertex="1" parent="1">
+        <mxCell id="7" value="systemd outputs&#10;.service / .timer files" style="rounded=1;whiteSpace=wrap;html=1;overflow=hidden;fillColor=#f8cecc;strokeColor=#b85450;" vertex="1" parent="1">
           <mxGeometry x="520" y="320" width="230" height="70" as="geometry" />
         </mxCell>
-        <mxCell id="8" value="cron outputs&#xa;reviewable crontab snippet" style="rounded=1;whiteSpace=wrap;html=1;overflow=hidden;fillColor=#f8cecc;strokeColor=#b85450;" vertex="1" parent="1">
+        <mxCell id="8" value="cron outputs&#10;reviewable crontab snippet" style="rounded=1;whiteSpace=wrap;html=1;overflow=hidden;fillColor=#f8cecc;strokeColor=#b85450;" vertex="1" parent="1">
           <mxGeometry x="790" y="320" width="230" height="70" as="geometry" />
         </mxCell>
-        <mxCell id="9" value="cli.py&#xa;render/install entrypoint" style="rounded=1;whiteSpace=wrap;html=1;overflow=hidden;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="1">
+        <mxCell id="9" value="cli.py&#10;render/install entrypoint" style="rounded=1;whiteSpace=wrap;html=1;overflow=hidden;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="1">
           <mxGeometry x="430" y="470" width="240" height="70" as="geometry" />
         </mxCell>
-        <mxCell id="10" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;" edge="1" parent="1" source="2" target="3">
-          <mxGeometry relative="1" as="geometry" />
+        <mxCell id="10" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;jumpStyle=arc;jumpSize=10;" edge="1" parent="1" source="2" target="3">
+          <mxGeometry relative="1" as="geometry" archilityManagedRoute="1">
+            <Array as="points">
+              <mxPoint x="430" y="124" />
+              <mxPoint x="550" y="124" />
+              <mxPoint x="550" y="146" />
+              <mxPoint x="200" y="146" />
+            </Array>
+          </mxGeometry>
         </mxCell>
-        <mxCell id="11" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;" edge="1" parent="1" source="2" target="5">
-          <mxGeometry relative="1" as="geometry" />
+        <mxCell id="11" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;jumpStyle=arc;jumpSize=10;" edge="1" parent="1" source="2" target="5">
+          <mxGeometry relative="1" as="geometry" archilityManagedRoute="1">
+            <Array as="points">
+              <mxPoint x="670" y="124" />
+              <mxPoint x="900" y="124" />
+              <mxPoint x="900" y="146" />
+            </Array>
+          </mxGeometry>
         </mxCell>
-        <mxCell id="12" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;" edge="1" parent="1" source="3" target="4">
-          <mxGeometry relative="1" as="geometry" />
+        <mxCell id="12" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;jumpStyle=arc;jumpSize=10;" edge="1" parent="1" source="3" target="4">
+          <mxGeometry relative="1" as="geometry" archilityManagedRoute="1">
+            <Array as="points">
+              <mxPoint x="344" y="205" />
+              <mxPoint x="406" y="205" />
+            </Array>
+          </mxGeometry>
         </mxCell>
-        <mxCell id="13" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;" edge="1" parent="1" source="5" target="4">
-          <mxGeometry relative="1" as="geometry" />
+        <mxCell id="13" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;jumpStyle=arc;jumpSize=10;" edge="1" parent="1" source="5" target="4">
+          <mxGeometry relative="1" as="geometry" archilityManagedRoute="1">
+            <Array as="points">
+              <mxPoint x="756" y="205" />
+              <mxPoint x="756" y="170" />
+              <mxPoint x="694" y="170" />
+              <mxPoint x="694" y="205" />
+            </Array>
+          </mxGeometry>
         </mxCell>
-        <mxCell id="14" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;" edge="1" parent="1" source="6" target="3">
-          <mxGeometry relative="1" as="geometry" />
+        <mxCell id="14" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;jumpStyle=arc;jumpSize=10;" edge="1" parent="1" source="6" target="3">
+          <mxGeometry relative="1" as="geometry" archilityManagedRoute="1">
+            <Array as="points">
+              <mxPoint x="205" y="296" />
+              <mxPoint x="279.75" y="296" />
+              <mxPoint x="279.75" y="264" />
+              <mxPoint x="120" y="264" />
+            </Array>
+          </mxGeometry>
         </mxCell>
-        <mxCell id="15" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;" edge="1" parent="1" source="5" target="7">
-          <mxGeometry relative="1" as="geometry" />
+        <mxCell id="15" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;jumpStyle=arc;jumpSize=10;" edge="1" parent="1" source="5" target="7">
+          <mxGeometry relative="1" as="geometry" archilityManagedRoute="1">
+            <Array as="points">
+              <mxPoint x="820" y="264" />
+              <mxPoint x="767.5" y="264" />
+              <mxPoint x="767.5" y="296" />
+              <mxPoint x="635" y="296" />
+            </Array>
+          </mxGeometry>
         </mxCell>
-        <mxCell id="16" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;" edge="1" parent="1" source="5" target="8">
-          <mxGeometry relative="1" as="geometry" />
+        <mxCell id="16" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;jumpStyle=arc;jumpSize=10;" edge="1" parent="1" source="5" target="8">
+          <mxGeometry relative="1" as="geometry" archilityManagedRoute="1">
+            <Array as="points">
+              <mxPoint x="980" y="264" />
+              <mxPoint x="935" y="264" />
+              <mxPoint x="935" y="296" />
+              <mxPoint x="905" y="296" />
+            </Array>
+          </mxGeometry>
         </mxCell>
-        <mxCell id="17" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;" edge="1" parent="1" source="9" target="3">
-          <mxGeometry relative="1" as="geometry" />
+        <mxCell id="17" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;jumpStyle=arc;jumpSize=10;" edge="1" parent="1" source="9" target="3">
+          <mxGeometry relative="1" as="geometry" archilityManagedRoute="1">
+            <Array as="points">
+              <mxPoint x="470" y="446" />
+              <mxPoint x="297.75" y="446" />
+              <mxPoint x="297.75" y="264" />
+              <mxPoint x="280" y="264" />
+            </Array>
+          </mxGeometry>
         </mxCell>
-        <mxCell id="18" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;" edge="1" parent="1" source="9" target="5">
-          <mxGeometry relative="1" as="geometry" />
+        <mxCell id="18" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;jumpStyle=arc;jumpSize=10;" edge="1" parent="1" source="9" target="5">
+          <mxGeometry relative="1" as="geometry" archilityManagedRoute="1">
+            <Array as="points">
+              <mxPoint x="630" y="446" />
+              <mxPoint x="488" y="446" />
+              <mxPoint x="488" y="264" />
+              <mxPoint x="900" y="264" />
+            </Array>
+          </mxGeometry>
         </mxCell>
       </root>
     </mxGraphModel>
