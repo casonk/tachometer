@@ -13,6 +13,8 @@ class RepoManifest:
     disk_path: Path
     profile_path: Path
     summary_path: Path
+    host_profile_path: Path
+    host_summary_path: Path
     default_label: str = "repo-snapshot"
 
     def repo_metadata(self) -> dict[str, str]:

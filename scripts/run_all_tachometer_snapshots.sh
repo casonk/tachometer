@@ -33,6 +33,13 @@ PYEOF
 }
 
 failed=0
+manifest_path="$tachometer_root/config/tachometer/profile.toml"
+
+printf "==> host: snapshot\n"
+if ! PYTHONPATH="$tachometer_src" python3 -m tachometer.cli host-snapshot --manifest "$manifest_path"; then
+  printf "FAILED host snapshot: %s\n" "$tachometer_root" >&2
+  ((failed++)) || true
+fi
 
 while IFS=$'\t' read -r repo_dir run_cmd no_run_reason; do
   runner="$repo_dir/scripts/run_tachometer_profile.sh"

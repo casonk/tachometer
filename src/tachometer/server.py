@@ -12,6 +12,7 @@ Three metric views are available via ?view=system|delta|process:
 Usage (via CLI):
     tachometer serve --manifest config/tachometer/profile.toml --port 5100
 """
+
 from __future__ import annotations
 
 import contextlib
@@ -19,6 +20,7 @@ import json
 import subprocess
 import threading
 import time
+from datetime import datetime, timedelta
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 from typing import Any
@@ -37,6 +39,7 @@ from .stoplight import (
     PROCESS_THRESHOLDS,
     backoff_action,
     evaluate_delta,
+    evaluate_host,
     evaluate_process,
     light_max,
     worst_light,
@@ -97,6 +100,7 @@ def _start_snapshot_run(tachometer_root: Path) -> bool:
 # Data gathering
 # ---------------------------------------------------------------------------
 
+
 def _load_json(path: Path) -> dict[str, Any]:
     if not path.exists():
         return {}
@@ -124,12 +128,14 @@ def _category_from_path(path_str: str) -> str:
 def gather_repo_data(tachometer_root: Path) -> list[dict[str, Any]]:
     portfolio_root = _portfolio_root(tachometer_root)
     repos = _load_downstream_repos(tachometer_root)
-    repos.append({
-        "name": "tachometer",
-        "path": "./util-repos/tachometer",
-        "reason": "Self-profile.",
-        "run_command": "python3 -m pytest tests/ -q",
-    })
+    repos.append(
+        {
+            "name": "tachometer",
+            "path": "./util-repos/tachometer",
+            "reason": "Self-profile.",
+            "run_command": "python3 -m pytest tests/ -q",
+        }
+    )
 
     results = []
     for repo in repos:
@@ -153,30 +159,66 @@ def gather_repo_data(tachometer_root: Path) -> list[dict[str, Any]]:
         stoplight_process = evaluate_process(run_summary) if has_process else {}
 
         backlog = load_backlog(repo_dir / ".tachometer" / "backlog.json")
-        results.append({
-            "name": repo["name"],
-            "category": _category_from_path(path_str),
-            "has_data": has_data,
-            "has_delta": has_delta,
-            "has_process": has_process,
-            "run_command": repo.get("run_command", ""),
-            "no_run_reason": repo.get("no_run_reason", ""),
-            "summary": summary,
-            "delta_summary": delta_summary,
-            "run_summary": run_summary,
-            "stoplight_system": stoplight_system,
-            "stoplight_delta": stoplight_delta,
-            "stoplight_process": stoplight_process,
-            "backlog": backlog,
-            "backlog_open": len(open_items(backlog)),
-        })
+        results.append(
+            {
+                "name": repo["name"],
+                "category": _category_from_path(path_str),
+                "has_data": has_data,
+                "has_delta": has_delta,
+                "has_process": has_process,
+                "run_command": repo.get("run_command", ""),
+                "no_run_reason": repo.get("no_run_reason", ""),
+                "summary": summary,
+                "delta_summary": delta_summary,
+                "run_summary": run_summary,
+                "stoplight_system": stoplight_system,
+                "stoplight_delta": stoplight_delta,
+                "stoplight_process": stoplight_process,
+                "backlog": backlog,
+                "backlog_open": len(open_items(backlog)),
+                "last_run_ts": summary.get("latest_sample_at"),
+            }
+        )
 
     return sorted(results, key=lambda r: (r["category"], r["name"]))
+
+
+def gather_host_data(host_summary_path: Path) -> dict[str, Any]:
+    summary = _load_json(host_summary_path)
+    has_data = bool(summary.get("sample_count", 0))
+    stoplight_host = evaluate_host(summary) if has_data else {}
+    return {
+        "has_data": has_data,
+        "summary": summary,
+        "stoplight_host": stoplight_host,
+    }
+
+
+def _fedora_debug_sidecar_path(tachometer_root: Path) -> Path:
+    return (
+        _portfolio_root(tachometer_root)
+        / "util-repos"
+        / "fedora-debugg"
+        / "artifacts"
+        / "latest"
+        / "tachometer-signals.json"
+    )
+
+
+def gather_fedora_debug_data(sidecar_path: Path) -> dict[str, Any]:
+    signals = _load_json(sidecar_path)
+    has_data = bool(signals)
+    return {
+        "has_data": has_data,
+        "signals": signals,
+        "overall_light": signals.get("overall_light", "unknown"),
+    }
 
 
 # ---------------------------------------------------------------------------
 # Formatting helpers
 # ---------------------------------------------------------------------------
+
 
 def _fmt_bytes(b: float | None) -> str:
     if b is None:
@@ -190,6 +232,58 @@ def _fmt_bytes(b: float | None) -> str:
 
 def _fmt_pct(v: float | None) -> str:
     return f"{v:.1f}%" if v is not None else "—"
+
+
+def _fmt_ratio_pct(v: float | None) -> str:
+    return _fmt_pct(v * 100 if v is not None else None)
+
+
+def _fmt_rel_time(seconds: float) -> str:
+    """Format a relative time delta (positive = future, negative = past)."""
+    future = seconds >= 0
+    secs = abs(int(seconds))
+    if secs < 60:
+        s = f"{secs}s"
+    elif secs < 3600:
+        m, rem = divmod(secs, 60)
+        s = f"{m}m {rem}s" if rem else f"{m}m"
+    elif secs < 86400:
+        h, rem = divmod(secs, 3600)
+        m = rem // 60
+        s = f"{h}h {m}m"
+    else:
+        d, rem = divmod(secs, 86400)
+        h = rem // 3600
+        s = f"{d}d {h}h"
+    return f"in {s}" if future else f"{s} ago"
+
+
+def _load_schedule_hours(tachometer_root: Path) -> list[int]:
+    """Read scheduled hours from portfolio-snapshot.toml; fallback to [0,6,12,18]."""
+    config_path = tachometer_root / "config" / "clockwork" / "portfolio-snapshot.toml"
+    try:
+        data = tomllib.loads(config_path.read_text(encoding="utf-8"))
+        on_calendar = data.get("on_calendar", "")
+        # Format: "*-*-* 0,6,12,18:00:00" — extract the hours part
+        if ":" in on_calendar and " " in on_calendar:
+            time_part = on_calendar.split(" ")[-1]  # "0,6,12,18:00:00"
+            hours_str = time_part.split(":")[0]  # "0,6,12,18"
+            return [int(h.strip()) for h in hours_str.split(",")]
+    except Exception:
+        pass
+    return [0, 6, 12, 18]
+
+
+def _next_schedule_ts(hours: list[int]) -> float:
+    """Return the Unix timestamp of the next scheduled run."""
+    now = datetime.now()
+    for offset in range(2):
+        day = now.date() + timedelta(days=offset)
+        for h in sorted(hours):
+            candidate = datetime(day.year, day.month, day.day, h, 0, 0)
+            if candidate > now:
+                return candidate.timestamp()
+    return (now + timedelta(hours=6)).timestamp()
 
 
 _LIGHT_COLOR = {
@@ -221,6 +315,187 @@ def _badge(light: str) -> str:
     return (
         f'<span style="background:{c};color:white;padding:2px 8px;border-radius:4px;'
         f'font-size:0.7rem;font-weight:700;letter-spacing:.04em">{label}</span>'
+    )
+
+
+def _banner_metric(label: str, value: str, light: str) -> str:
+    c = _LIGHT_COLOR.get(light, "#94a3b8")
+    return (
+        f'<span style="padding:6px 10px;border:1px solid #e2e8f0;border-radius:999px;'
+        f'background:#f8fafc;font-size:0.78rem;color:#475569">{label}&nbsp;'
+        f'<strong style="color:{c}">{value}</strong></span>'
+    )
+
+
+def _render_host_banner(host: dict[str, Any]) -> str:
+    if not host["has_data"]:
+        return (
+            '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">'
+            f"{_banner_metric('Host', 'Awaiting snapshot', 'unknown')}"
+            "</div>"
+        )
+
+    stoplight = host["stoplight_host"]
+    lights = stoplight.get("lights", {})
+    metrics = stoplight.get("metrics", {})
+    chips = [
+        _banner_metric(
+            "Host",
+            _LIGHT_LABEL.get(stoplight.get("overall_light", "unknown"), "—"),
+            stoplight.get("overall_light", "unknown"),
+        ),
+        _banner_metric(
+            "CPU",
+            _fmt_pct(metrics.get("cpu_percent")),
+            lights.get("cpu", "unknown"),
+        ),
+        _banner_metric(
+            "Memory",
+            _fmt_ratio_pct(metrics.get("memory_utilization_ratio")),
+            lights.get("memory", "unknown"),
+        ),
+        _banner_metric(
+            "Disk",
+            _fmt_ratio_pct(metrics.get("disk_utilization_ratio")),
+            lights.get("disk", "unknown"),
+        ),
+        _banner_metric(
+            "GPU",
+            _fmt_pct(metrics.get("gpu_util_percent")),
+            lights.get("gpu", "unknown"),
+        ),
+    ]
+    return (
+        '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">'
+        + "".join(chips)
+        + "</div>"
+    )
+
+
+def _snapshot_age_light(snapshot_epoch: int | float | None) -> str:
+    if snapshot_epoch is None:
+        return "unknown"
+    age_seconds = max(0, time.time() - float(snapshot_epoch))
+    if age_seconds <= 6 * 3600:
+        return "green"
+    if age_seconds <= 24 * 3600:
+        return "yellow"
+    return "red"
+
+
+_FEDORA_DEBUG_BUCKET_ORDER = (
+    "collection",
+    "display",
+    "coredumps",
+    "gpu",
+    "storage",
+    "packages",
+    "python",
+    "node",
+    "go",
+)
+
+
+def _legacy_fedora_debug_buckets(signals: dict[str, Any]) -> list[dict[str, str]]:
+    lights = signals.get("lights", {})
+    metrics = signals.get("metrics", {})
+    return [
+        {
+            "label": "Warnings",
+            "summary": str(metrics.get("journal_warning_count", "—")),
+            "light": lights.get("warnings", "unknown"),
+        },
+        {
+            "label": "Coredumps",
+            "summary": str(metrics.get("current_coredump_marker_count", "—")),
+            "light": lights.get("coredumps", "unknown"),
+        },
+        {
+            "label": "GPU",
+            "summary": "alert" if metrics.get("gpu_driver_alert") else "ok",
+            "light": lights.get("gpu", "unknown"),
+        },
+    ]
+
+
+def _fedora_debug_buckets(signals: dict[str, Any]) -> list[dict[str, str]]:
+    raw_buckets = signals.get("buckets")
+    if not isinstance(raw_buckets, dict):
+        return _legacy_fedora_debug_buckets(signals)
+
+    buckets: list[dict[str, str]] = []
+    for key in _FEDORA_DEBUG_BUCKET_ORDER:
+        bucket = raw_buckets.get(key)
+        if not isinstance(bucket, dict):
+            continue
+        buckets.append(
+            {
+                "label": str(bucket.get("label", key.title())),
+                "summary": str(bucket.get("summary", "—")),
+                "light": str(bucket.get("light", "unknown")),
+            }
+        )
+
+    for key, bucket in raw_buckets.items():
+        if key in _FEDORA_DEBUG_BUCKET_ORDER or not isinstance(bucket, dict):
+            continue
+        buckets.append(
+            {
+                "label": str(bucket.get("label", key.title())),
+                "summary": str(bucket.get("summary", "—")),
+                "light": str(bucket.get("light", "unknown")),
+            }
+        )
+
+    return buckets or _legacy_fedora_debug_buckets(signals)
+
+
+def _render_fedora_debug_banner(fedora_debug: dict[str, Any]) -> str:
+    if not fedora_debug["has_data"]:
+        return (
+            '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">'
+            f"{_banner_metric('Fedora Debug', 'Awaiting workflow', 'unknown')}"
+            "</div>"
+        )
+
+    signals = fedora_debug["signals"]
+    snapshot_epoch = signals.get("latest_snapshot_epoch")
+    snapshot_light = _snapshot_age_light(snapshot_epoch)
+    snapshot_label = (
+        _fmt_rel_time(float(snapshot_epoch) - time.time())
+        if snapshot_epoch is not None
+        else "unknown"
+    )
+    display_light = worst_light(
+        {
+            0: fedora_debug.get("overall_light", "unknown"),
+            1: snapshot_light,
+        }
+    )
+    chips = [
+        _banner_metric(
+            "Fedora Debug",
+            _LIGHT_LABEL.get(display_light, "—"),
+            display_light,
+        ),
+        _banner_metric(
+            "Snapshot",
+            snapshot_label,
+            snapshot_light,
+        ),
+    ]
+    for bucket in _fedora_debug_buckets(signals):
+        chips.append(
+            _banner_metric(
+                bucket["label"],
+                bucket["summary"],
+                bucket["light"],
+            )
+        )
+    return (
+        '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">'
+        + "".join(chips)
+        + "</div>"
     )
 
 
@@ -289,19 +564,16 @@ def _tab_bar(current_view: str, port: int) -> str:
         color = "#e2e8f0" if active else "#475569"
         tabs.append(
             f'<a href="/?view={view}" style="padding:6px 16px;border-radius:6px;'
-            f'background:{bg};color:{color};text-decoration:none;font-size:0.8rem;'
+            f"background:{bg};color:{color};text-decoration:none;font-size:0.8rem;"
             f'font-weight:{"700" if active else "500"}">{label}</a>'
         )
-    return (
-        '<div style="display:flex;gap:6px;flex-wrap:wrap">'
-        + "".join(tabs)
-        + "</div>"
-    )
+    return '<div style="display:flex;gap:6px;flex-wrap:wrap">' + "".join(tabs) + "</div>"
 
 
 def _render_system_row(
     repo: dict[str, Any],
     max_repo_bytes: float,
+    next_run_ts: float = 0.0,
 ) -> str:
     s = repo["summary"]
     st = repo["stoplight_system"]
@@ -323,21 +595,16 @@ def _render_system_row(
     _cpu_t = DEFAULT_THRESHOLDS["cpu_percent"]
     _mem_t = DEFAULT_THRESHOLDS["memory_utilization_ratio"]
     _gpu_t = DEFAULT_THRESHOLDS["gpu_util_percent"]
-    _sz_t  = DEFAULT_THRESHOLDS["repo_size_bytes"]
+    _sz_t = DEFAULT_THRESHOLDS["repo_size_bytes"]
 
     def _size_row(label: str, val: float | None, light: str = "unknown") -> str:
         bar = _gauge(val, max_repo_bytes, light, label=_fmt_bytes(val), **_sz_t)
-        return (
-            f'<div style="font-size:0.68rem;color:#94a3b8;margin-top:4px">{label}</div>'
-            f"{bar}"
-        )
+        return f'<div style="font-size:0.68rem;color:#94a3b8;margin-top:4px">{label}</div>{bar}'
 
-    dirty_span = (
-        f', <span style="color:#ef4444">{int(dirty)}\u2717</span>' if dirty else ""
-    )
+    dirty_span = f', <span style="color:#ef4444">{int(dirty)}\u2717</span>' if dirty else ""
     repo_cell = (
         f'<div style="font-size:0.7rem;color:#64748b">'
-        f'{int(files) if files else "—"} tracked{dirty_span}</div>'
+        f"{int(files) if files else '—'} tracked{dirty_span}</div>"
     )
 
     size_cell = (
@@ -359,6 +626,7 @@ def _render_system_row(
         f"<td>{_gauge(gpu, 100, lights.get('gpu', 'unknown'), **_gpu_t)}</td>"
         f"<td>{size_cell}</td>"
         f"<td>{repo_cell}</td>"
+        f"<td>{_schedule_cell(repo, next_run_ts)}</td>"
         f"</tr>"
     )
 
@@ -371,7 +639,7 @@ def _name_cell(repo: dict[str, Any]) -> str:
         badge = (
             f'<span title="{count} open backlog item(s)" '
             f'style="background:#ef4444;color:white;border-radius:10px;'
-            f'padding:1px 6px;font-size:0.65rem;font-weight:700;'
+            f"padding:1px 6px;font-size:0.65rem;font-weight:700;"
             f'margin-left:6px;vertical-align:middle">{count}</span>'
         )
         return f"<strong>{name}</strong>{badge}"
@@ -384,18 +652,36 @@ def _no_run_cell(repo: dict[str, Any], colspan: int) -> str:
     if no_run_reason:
         msg = f'<span style="color:#94a3b8">{no_run_reason}</span>'
     elif run_command:
-        msg = f'Awaiting first run &mdash; <code>{run_command}</code>'
+        msg = f"Awaiting first run &mdash; <code>{run_command}</code>"
     else:
-        msg = 'No run command configured'
+        msg = "No run command configured"
     return (
         f"<tr><td>{_name_cell(repo)}</td>"
         f'<td colspan="{colspan}" style="font-size:0.8rem">{msg}</td></tr>'
     )
 
 
-def _render_delta_row(repo: dict[str, Any]) -> str:
+def _schedule_cell(repo: dict[str, Any], next_run_ts: float) -> str:
+    """Render last-run and next-run schedule info for a repo."""
+    now = time.time()
+    last_ts = repo.get("last_run_ts")
+
+    if last_ts is not None:
+        last_rel = _fmt_rel_time(last_ts - now)  # negative → "X ago"
+        last_str = f'<div style="font-size:0.72rem;color:#64748b">\u25b6 {last_rel}</div>'
+    else:
+        last_str = '<div style="font-size:0.72rem;color:#94a3b8">no data yet</div>'
+
+    next_rel = _fmt_rel_time(next_run_ts - now)  # positive → "in X"
+    next_str = (
+        f'<div style="font-size:0.72rem;color:#475569;margin-top:3px">\u23f0 {next_rel}</div>'
+    )
+    return last_str + next_str
+
+
+def _render_delta_row(repo: dict[str, Any], next_run_ts: float = 0.0) -> str:
     if not repo["has_delta"]:
-        return _no_run_cell(repo, colspan=4)
+        return _no_run_cell(repo, colspan=5)
 
     st = repo["stoplight_delta"]
     lights = st.get("lights", {})
@@ -408,13 +694,35 @@ def _render_delta_row(repo: dict[str, Any]) -> str:
     gpu = metrics.get("avg_delta_gpu_util_percent")
 
     cpu_label = f"{'+' if (cpu or 0) >= 0 else ''}{cpu:.1f}%" if cpu is not None else None
-    mem_label = f"{'+' if (mem or 0) >= 0 else ''}{_fmt_bytes(abs(mem) if mem else None)}" if mem is not None else None
+    mem_label = (
+        f"{'+' if (mem or 0) >= 0 else ''}{_fmt_bytes(abs(mem) if mem else None)}"
+        if mem is not None
+        else None
+    )
     gpu_label = f"{'+' if (gpu or 0) >= 0 else ''}{gpu:.1f}%" if gpu is not None else None
 
     _dt = DELTA_THRESHOLDS
-    cpu_gauge = _gauge(max(0.0, cpu) if cpu is not None else None, 100, lights.get("delta_cpu", "unknown"), label=cpu_label, **_dt["delta_cpu_percent"])
-    mem_gauge = _gauge(max(0.0, mem) if mem is not None else None, 2e9, lights.get("delta_memory", "unknown"), label=mem_label, **_dt["delta_memory_used_bytes"])
-    gpu_gauge = _gauge(max(0.0, gpu) if gpu is not None else None, 100, lights.get("delta_gpu", "unknown"), label=gpu_label, **_dt["delta_gpu_util_percent"])
+    cpu_gauge = _gauge(
+        max(0.0, cpu) if cpu is not None else None,
+        100,
+        lights.get("delta_cpu", "unknown"),
+        label=cpu_label,
+        **_dt["delta_cpu_percent"],
+    )
+    mem_gauge = _gauge(
+        max(0.0, mem) if mem is not None else None,
+        2e9,
+        lights.get("delta_memory", "unknown"),
+        label=mem_label,
+        **_dt["delta_memory_used_bytes"],
+    )
+    gpu_gauge = _gauge(
+        max(0.0, gpu) if gpu is not None else None,
+        100,
+        lights.get("delta_gpu", "unknown"),
+        label=gpu_label,
+        **_dt["delta_gpu_util_percent"],
+    )
 
     return (
         f"<tr>"
@@ -424,13 +732,14 @@ def _render_delta_row(repo: dict[str, Any]) -> str:
         f"<td>{mem_gauge}</td>"
         f"<td>{gpu_gauge}</td>"
         f'<td style="color:#64748b;font-size:0.75rem">{pair_count} pairs</td>'
+        f"<td>{_schedule_cell(repo, next_run_ts)}</td>"
         f"</tr>"
     )
 
 
-def _render_process_row(repo: dict[str, Any]) -> str:
+def _render_process_row(repo: dict[str, Any], next_run_ts: float = 0.0) -> str:
     if not repo["has_process"]:
-        return _no_run_cell(repo, colspan=5)
+        return _no_run_cell(repo, colspan=6)
 
     st = repo["stoplight_process"]
     lights = st.get("lights", {})
@@ -449,11 +758,12 @@ def _render_process_row(repo: dict[str, Any]) -> str:
         f"<tr>"
         f"<td>{_name_cell(repo)}</td>"
         f"<td>{_dot(overall)}{_badge(overall)}</td>"
-        f"<td>{_gauge(avg_cpu,  100, lights.get('proc_avg_cpu',  'unknown'), **_pt['proc_avg_cpu_percent'])}</td>"
+        f"<td>{_gauge(avg_cpu, 100, lights.get('proc_avg_cpu', 'unknown'), **_pt['proc_avg_cpu_percent'])}</td>"
         f"<td>{_gauge(peak_cpu, 100, lights.get('proc_peak_cpu', 'unknown'), **_pt['proc_peak_cpu_percent'])}</td>"
-        f"<td>{_gauge(avg_rss,  4e9, lights.get('proc_avg_rss',  'unknown'), label=_fmt_bytes(avg_rss),  **_pt['proc_avg_memory_rss_bytes'])}</td>"
+        f"<td>{_gauge(avg_rss, 4e9, lights.get('proc_avg_rss', 'unknown'), label=_fmt_bytes(avg_rss), **_pt['proc_avg_memory_rss_bytes'])}</td>"
         f"<td>{_gauge(peak_rss, 4e9, lights.get('proc_peak_rss', 'unknown'), label=_fmt_bytes(peak_rss), **_pt['proc_peak_memory_rss_bytes'])}</td>"
         f'<td style="color:#64748b;font-size:0.75rem">{qualifying} runs</td>'
+        f"<td>{_schedule_cell(repo, next_run_ts)}</td>"
         f"</tr>"
     )
 
@@ -466,8 +776,7 @@ def _tail_log(log_path: Path | None, lines: int = 1) -> str:
         text = log_path.read_text(encoding="utf-8", errors="replace")
         tail = [ln for ln in text.splitlines() if ln.strip()][-lines:]
         return " &mdash; ".join(
-            ln.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
-            for ln in tail
+            ln.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;") for ln in tail
         )
     except OSError:
         return ""
@@ -488,9 +797,9 @@ def _run_button(view: str = "system") -> str:
         disabled = "disabled"
         last_line = _tail_log(log_path)
         status = (
-            f'<span style="color:#94a3b8;font-size:0.72rem;margin-left:10px">'
-            f"{last_line}</span>"
-            if last_line else ""
+            f'<span style="color:#94a3b8;font-size:0.72rem;margin-left:10px">{last_line}</span>'
+            if last_line
+            else ""
         )
     else:
         label = "Run All Snapshots"
@@ -517,58 +826,51 @@ def _run_button(view: str = "system") -> str:
     )
 
 
-def _render_dashboard(repos: list[dict[str, Any]], port: int, view: str = "system") -> str:
+def _render_dashboard(
+    repos: list[dict[str, Any]],
+    host: dict[str, Any],
+    fedora_debug: dict[str, Any],
+    port: int,
+    view: str = "system",
+    tachometer_root: Path = Path("."),
+) -> str:
     view = view if view in _VIEW_LABELS else "system"
 
-    # Overall system light — use the active view's stoplights
+    # Portfolio light — use the active view's repo stoplights
     stoplight_key = f"stoplight_{view}"
     has_key = f"has_{view}" if view != "system" else "has_data"
-    all_lights = {
-        r[stoplight_key].get("overall_light", "unknown")
-        for r in repos
-        if r.get(has_key)
-    }
-    system_light = worst_light({i: light for i, light in enumerate(all_lights)})  # type: ignore[arg-type]
-    system_color = _LIGHT_COLOR.get(system_light, "#94a3b8")
-    system_label = {
+    all_lights = {r[stoplight_key].get("overall_light", "unknown") for r in repos if r.get(has_key)}
+    portfolio_light = worst_light({i: light for i, light in enumerate(all_lights)})  # type: ignore[arg-type]
+    portfolio_color = _LIGHT_COLOR.get(portfolio_light, "#94a3b8")
+    portfolio_label = {
         "green": "All Systems Normal",
         "yellow": "Watch — Pressure Detected",
         "red": "Throttle — Overloaded",
         "unknown": "Awaiting Data",
-    }.get(system_light, "Awaiting Data")
-
-    # Disk is a system-level metric — extract from first repo with data for banner.
-    system_disk_pct: float | None = None
-    system_disk_light = "unknown"
-    for r in repos:
-        if r["has_data"]:
-            dr = r["stoplight_system"].get("metrics", {}).get("disk_utilization_ratio")
-            if dr is not None:
-                system_disk_pct = dr * 100
-                system_disk_light = r["stoplight_system"].get("lights", {}).get("disk", "unknown")
-            break
-    disk_banner = ""
-    if system_disk_pct is not None:
-        dc = _LIGHT_COLOR.get(system_disk_light, "#94a3b8")
-        disk_banner = (
-            f'<span style="margin-left:18px;padding-left:18px;border-left:1px solid #e2e8f0;'
-            f'font-size:0.85rem;color:#475569">Disk&nbsp;'
-            f'<strong style="color:{dc}">{system_disk_pct:.1f}%</strong></span>'
-        )
+    }.get(portfolio_light, "Awaiting Data")
+    host_banner = _render_host_banner(host)
+    fedora_debug_banner = _render_fedora_debug_banner(fedora_debug)
 
     # Dynamic gauge scale — largest total repo size = 100% bar width.
-    max_repo_bytes = max(
-        (r["summary"].get("latest_repo_size_bytes") or 0 for r in repos if r["has_data"]),
-        default=1,
-    ) or 1
+    max_repo_bytes = (
+        max(
+            (r["summary"].get("latest_repo_size_bytes") or 0 for r in repos if r["has_data"]),
+            default=1,
+        )
+        or 1
+    )
+
+    # Schedule: compute once, share across all rows
+    schedule_hours = _load_schedule_hours(tachometer_root)
+    next_run_ts = _next_schedule_ts(schedule_hours)
 
     # Column headers per view
     if view == "system":
-        headers = "<th>Repository</th><th>Status</th><th>CPU % (sys)</th><th>Memory % (sys)</th><th>GPU % (sys)</th><th>Repo Size</th><th>Repo</th>"
+        headers = "<th>Repository</th><th>Status</th><th>CPU % (sys)</th><th>Memory % (sys)</th><th>GPU % (sys)</th><th>Repo Size</th><th>Repo</th><th>Schedule</th>"
     elif view == "delta":
-        headers = "<th>Repository</th><th>Status</th><th>ΔCPU %</th><th>ΔMemory</th><th>ΔGPU %</th><th>Pairs</th>"
+        headers = "<th>Repository</th><th>Status</th><th>ΔCPU %</th><th>ΔMemory</th><th>ΔGPU %</th><th>Pairs</th><th>Schedule</th>"
     else:
-        headers = "<th>Repository</th><th>Status</th><th>Avg CPU %</th><th>Peak CPU %</th><th>Avg RSS</th><th>Peak RSS</th><th>Runs</th>"
+        headers = "<th>Repository</th><th>Status</th><th>Avg CPU %</th><th>Peak CPU %</th><th>Avg RSS</th><th>Peak RSS</th><th>Runs</th><th>Schedule</th>"
 
     rows = []
     current_category = None
@@ -579,7 +881,7 @@ def _render_dashboard(repos: list[dict[str, Any]], port: int, view: str = "syste
             current_category = cat
             rows.append(
                 f'<tr><td colspan="{col_count}" style="background:#f1f5f9;font-size:0.7rem;'
-                f'font-weight:700;color:#64748b;text-transform:uppercase;'
+                f"font-weight:700;color:#64748b;text-transform:uppercase;"
                 f'letter-spacing:.08em;padding:6px 14px">{cat}</td></tr>'
             )
 
@@ -591,11 +893,11 @@ def _render_dashboard(repos: list[dict[str, Any]], port: int, view: str = "syste
                     f"run ./scripts/run_tachometer_profile.sh snapshot</td></tr>"
                 )
                 continue
-            rows.append(_render_system_row(repo, max_repo_bytes))
+            rows.append(_render_system_row(repo, max_repo_bytes, next_run_ts=next_run_ts))
         elif view == "delta":
-            rows.append(_render_delta_row(repo))
+            rows.append(_render_delta_row(repo, next_run_ts=next_run_ts))
         else:
-            rows.append(_render_process_row(repo))
+            rows.append(_render_process_row(repo, next_run_ts=next_run_ts))
 
     rows_html = "\n".join(rows)
     now = time.strftime("%Y-%m-%d %H:%M:%S")
@@ -620,9 +922,9 @@ def _render_dashboard(repos: list[dict[str, Any]], port: int, view: str = "syste
   .desc{{color:#64748b;font-size:0.78rem;margin-bottom:14px;font-style:italic}}
   .banner{{display:flex;align-items:center;gap:12px;padding:12px 18px;
            border-radius:10px;background:white;margin-bottom:22px;
-           border:2px solid {system_color};box-shadow:0 1px 3px rgba(0,0,0,.07)}}
-  .bdot{{width:18px;height:18px;border-radius:50%;background:{system_color};flex-shrink:0}}
-  .blabel{{font-size:1rem;font-weight:600;color:{system_color}}}
+           border:2px solid {portfolio_color};box-shadow:0 1px 3px rgba(0,0,0,.07)}}
+  .bdot{{width:18px;height:18px;border-radius:50%;background:{portfolio_color};flex-shrink:0}}
+  .blabel{{font-size:1rem;font-weight:600;color:{portfolio_color}}}
   table{{width:100%;border-collapse:collapse;background:white;border-radius:10px;
          box-shadow:0 1px 3px rgba(0,0,0,.07);overflow:hidden}}
   th{{background:#1e293b;color:#e2e8f0;padding:9px 14px;text-align:left;
@@ -647,9 +949,19 @@ def _render_dashboard(repos: list[dict[str, Any]], port: int, view: str = "syste
 </div>
 <div class="desc">{view_desc}</div>
 <div class="banner">
-  <div class="bdot"></div>
-  <div class="blabel">{system_label}</div>
-  {disk_banner}
+  <div style="display:flex;align-items:center;gap:12px;justify-content:space-between;flex-wrap:wrap;width:100%">
+    <div style="display:flex;align-items:center;gap:12px">
+      <div class="bdot"></div>
+      <div>
+        <div class="blabel">{portfolio_label}</div>
+        <div style="font-size:0.78rem;color:#64748b">Portfolio {view} aggregate</div>
+      </div>
+    </div>
+    <div style="display:flex;flex-direction:column;align-items:flex-end;gap:8px">
+      {host_banner}
+      {fedora_debug_banner}
+    </div>
+  </div>
 </div>
 <table>
 <thead>
@@ -670,15 +982,34 @@ def _render_dashboard(repos: list[dict[str, Any]], port: int, view: str = "syste
 # JSON API
 # ---------------------------------------------------------------------------
 
-def _build_api_payload(repos: list[dict[str, Any]]) -> dict[str, Any]:
+
+def _build_api_payload(
+    repos: list[dict[str, Any]],
+    host: dict[str, Any],
+    fedora_debug: dict[str, Any],
+) -> dict[str, Any]:
     all_lights = {
         r["stoplight_system"].get("overall_light", "unknown") for r in repos if r["has_data"]
     }
-    system_light = worst_light({i: light for i, light in enumerate(all_lights)})  # type: ignore[arg-type]
+    portfolio_light = worst_light({i: light for i, light in enumerate(all_lights)})  # type: ignore[arg-type]
     return {
         "timestamp": time.time(),
-        "system_light": system_light,
-        "system_backoff_action": backoff_action(system_light),
+        "system_light": portfolio_light,
+        "system_backoff_action": backoff_action(portfolio_light),
+        "portfolio_light": portfolio_light,
+        "portfolio_backoff_action": backoff_action(portfolio_light),
+        "host_light": host["stoplight_host"].get("overall_light", "unknown"),
+        "host": {
+            "has_data": host["has_data"],
+            "summary": host["summary"],
+            "stoplight": host["stoplight_host"],
+        },
+        "fedora_debug_light": fedora_debug.get("overall_light", "unknown"),
+        "fedora_debug": {
+            "has_data": fedora_debug["has_data"],
+            "signals": fedora_debug["signals"],
+            "overall_light": fedora_debug.get("overall_light", "unknown"),
+        },
         "repos": [
             {
                 "name": r["name"],
@@ -701,11 +1032,15 @@ def _build_api_payload(repos: list[dict[str, Any]]) -> dict[str, Any]:
 # HTTP server
 # ---------------------------------------------------------------------------
 
+
 class _Handler(BaseHTTPRequestHandler):
     tachometer_root: Path = Path(".")
+    host_summary_path: Path = Path(".tachometer/host-summary.json")
     port: int = 5100
 
-    def _send(self, body: str, content_type: str = "text/html; charset=utf-8", status: int = 200) -> None:
+    def _send(
+        self, body: str, content_type: str = "text/html; charset=utf-8", status: int = 200
+    ) -> None:
         encoded = body.encode("utf-8")
         self.send_response(status)
         self.send_header("Content-Type", content_type)
@@ -719,10 +1054,26 @@ class _Handler(BaseHTTPRequestHandler):
         view = qs.get("view", ["system"])[0]
 
         repos = gather_repo_data(self.__class__.tachometer_root)
+        host = gather_host_data(self.__class__.host_summary_path)
+        fedora_debug = gather_fedora_debug_data(
+            _fedora_debug_sidecar_path(self.__class__.tachometer_root)
+        )
         if parsed.path == "/api/status":
-            self._send(json.dumps(_build_api_payload(repos), indent=2), "application/json")
+            self._send(
+                json.dumps(_build_api_payload(repos, host, fedora_debug), indent=2),
+                "application/json",
+            )
         elif parsed.path in ("/", "/index.html"):
-            self._send(_render_dashboard(repos, self.__class__.port, view=view))
+            self._send(
+                _render_dashboard(
+                    repos,
+                    host,
+                    fedora_debug,
+                    self.__class__.port,
+                    view=view,
+                    tachometer_root=self.__class__.tachometer_root,
+                )
+            )
         else:
             self._send("Not Found", "text/plain", 404)
 
@@ -743,12 +1094,22 @@ class _Handler(BaseHTTPRequestHandler):
         pass
 
 
-def serve(tachometer_root: Path, port: int = 5100) -> None:
+def serve(
+    tachometer_root: Path,
+    *,
+    host_summary_path: Path | None = None,
+    port: int = 5100,
+) -> None:
     """Start the dashboard HTTP server (blocking)."""
     handler = type(
         "Handler",
         (_Handler,),
-        {"tachometer_root": tachometer_root, "port": port},
+        {
+            "tachometer_root": tachometer_root,
+            "host_summary_path": host_summary_path
+            or (tachometer_root / ".tachometer" / "host-summary.json"),
+            "port": port,
+        },
     )
     httpd = HTTPServer(("0.0.0.0", port), handler)
     print(f"Tachometer dashboard : http://localhost:{port}/")

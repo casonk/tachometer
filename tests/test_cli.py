@@ -47,6 +47,19 @@ def test_cli_snapshot_writes_profile_and_summary(tmp_path: Path, capsys):
     assert output["name"] == "repo-snapshot"
 
 
+def test_cli_host_snapshot_writes_host_profile_and_summary(tmp_path: Path, capsys):
+    manifest_path = _write_manifest(tmp_path)
+
+    rc = main(["host-snapshot", "--manifest", str(manifest_path)])
+
+    assert rc == 0
+    assert (tmp_path / ".tachometer" / "host-profile.json").exists()
+    assert (tmp_path / ".tachometer" / "host-summary.json").exists()
+    output = json.loads(capsys.readouterr().out)
+    assert output["name"] == "host-snapshot"
+    assert output["repo_root"] is None
+
+
 def test_cli_run_profiles_command(tmp_path: Path):
     manifest_path = _write_manifest(tmp_path, name="doseido", category="health-repos")
 

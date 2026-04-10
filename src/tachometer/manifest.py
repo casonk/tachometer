@@ -27,6 +27,20 @@ def _repo_root_for_manifest(manifest_path: Path) -> Path:
     return resolved.parents[2]
 
 
+def _resolve_repo_path(
+    repo_root: Path,
+    mapping: dict[str, Any],
+    key: str,
+    *,
+    default: str,
+    context: str,
+) -> Path:
+    value = mapping.get(key, default)
+    if not isinstance(value, str) or not value.strip():
+        raise ValueError(f"{context}.{key} must be a non-empty string")
+    return (repo_root / value).resolve()
+
+
 def load_manifest(manifest_path: str | Path) -> RepoManifest:
     path = Path(manifest_path)
     data = tomllib.loads(path.read_text(encoding="utf-8"))
@@ -44,17 +58,45 @@ def load_manifest(manifest_path: str | Path) -> RepoManifest:
         raise ValueError("[defaults] must be a table when present")
 
     repo_root = _repo_root_for_manifest(path)
-    disk_path = repo_root / paths.get("disk_path", ".")
-    profile_path = repo_root / paths.get("profile_path", ".tachometer/profile.json")
-    summary_path = repo_root / paths.get("summary_path", ".tachometer/summary.json")
+    disk_path = _resolve_repo_path(repo_root, paths, "disk_path", default=".", context="paths")
+    profile_path = _resolve_repo_path(
+        repo_root,
+        paths,
+        "profile_path",
+        default=".tachometer/profile.json",
+        context="paths",
+    )
+    summary_path = _resolve_repo_path(
+        repo_root,
+        paths,
+        "summary_path",
+        default=".tachometer/summary.json",
+        context="paths",
+    )
+    host_profile_path = _resolve_repo_path(
+        repo_root,
+        paths,
+        "host_profile_path",
+        default=".tachometer/host-profile.json",
+        context="paths",
+    )
+    host_summary_path = _resolve_repo_path(
+        repo_root,
+        paths,
+        "host_summary_path",
+        default=".tachometer/host-summary.json",
+        context="paths",
+    )
 
     return RepoManifest(
         name=_require_str(repo, "name", context="repo"),
         category=_require_str(repo, "category", context="repo"),
         kind=_require_str(repo, "kind", context="repo"),
         repo_root=repo_root,
-        disk_path=disk_path.resolve(),
-        profile_path=profile_path.resolve(),
-        summary_path=summary_path.resolve(),
+        disk_path=disk_path,
+        profile_path=profile_path,
+        summary_path=summary_path,
+        host_profile_path=host_profile_path,
+        host_summary_path=host_summary_path,
         default_label=str(defaults.get("label", "repo-snapshot")),
     )
