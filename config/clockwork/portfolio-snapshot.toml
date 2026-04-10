@@ -1,6 +1,6 @@
 [[jobs]]
 name = "tachometer-portfolio-snapshot"
-description = "Collect resource and repo snapshots across all portfolio repos"
+description = "Collect host and repo snapshots across all portfolio repos"
 scope = "user"
 service_type = "oneshot"
 working_directory = "/mnt/4tb-m2/git/util-repos/tachometer"

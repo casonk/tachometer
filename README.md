@@ -13,6 +13,8 @@ convention.
 `tachometer` currently provides:
 
 - host resource snapshots: CPU, load average, memory, disk, and optional GPU
+- canonical host profile and summary artifacts for the dashboard banner
+- optional Fedora-specific sidecar signals exported by `fedora-debugg`
 - repo snapshots: repo size, file and directory counts, and git tracked/dirty
   or untracked counts when git is available
 - profiled command runs with pre and post samples plus runtime metadata
@@ -44,6 +46,12 @@ Capture a repo snapshot from a tracked manifest:
 tachometer snapshot --manifest examples/doseido/repo-profile.toml
 ```
 
+Capture the canonical host snapshot used by the portfolio dashboard banner:
+
+```bash
+tachometer host-snapshot --manifest config/tachometer/profile.toml
+```
+
 Profile a command and append pre/post samples plus a run record:
 
 ```bash
@@ -55,6 +63,17 @@ Print the current JSON summary:
 ```bash
 tachometer summarize --manifest examples/doseido/repo-profile.toml
 ```
+
+Print the current canonical host summary:
+
+```bash
+tachometer host-summarize --manifest config/tachometer/profile.toml
+```
+
+If `fedora-debugg` has exported `artifacts/latest/tachometer-signals.json`,
+the dashboard also renders a separate Fedora Debug strip with snapshot age plus
+bucketed Collection, Display, Coredumps, GPU, Storage, Packages, Python, Node,
+and Go signals.
 
 ## Manifest Shape
 
@@ -68,6 +87,8 @@ kind = "python"
 disk_path = "."
 profile_path = ".tachometer/profile.json"
 summary_path = ".tachometer/summary.json"
+host_profile_path = ".tachometer/host-profile.json"
+host_summary_path = ".tachometer/host-summary.json"
 
 [defaults]
 label = "repo-snapshot"
@@ -79,6 +100,8 @@ Manifest rules:
 - the repo root is inferred from the manifest location
 - `.tachometer/` is the standard local-only output directory
 - `disk_path` is resolved relative to the repo root
+- `host_profile_path` and `host_summary_path` default to canonical dashboard artifacts
+  and are primarily used by the `tachometer` repo itself
 
 ## Portfolio Rollout
 

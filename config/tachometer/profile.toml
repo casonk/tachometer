@@ -7,6 +7,8 @@ kind = "python"
 disk_path = "."
 profile_path = ".tachometer/profile.json"
 summary_path = ".tachometer/summary.json"
+host_profile_path = ".tachometer/host-profile.json"
+host_summary_path = ".tachometer/host-summary.json"
 
 [defaults]
 label = "repo-snapshot"

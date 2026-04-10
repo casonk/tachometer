@@ -16,6 +16,7 @@ from .model import ResourceSnapshot
 
 try:
     import psutil as _psutil  # type: ignore[import-not-found]
+
     _PSUTIL_AVAILABLE = True
 except ImportError:
     _psutil = None  # type: ignore[assignment]
@@ -132,17 +133,9 @@ def _monitor_process(
             # Always collect one sample — this guarantees data for short-lived processes.
             try:
                 procs = [parent] + parent.children(recursive=True)
-                raw_cpu = sum(
-                    p.cpu_percent(interval=None)
-                    for p in procs
-                    if p.is_running()
-                )
+                raw_cpu = sum(p.cpu_percent(interval=None) for p in procs if p.is_running())
                 cpu = raw_cpu / cpu_count  # normalise to 0–100 % of total capacity
-                rss = sum(
-                    p.memory_info().rss
-                    for p in procs
-                    if p.is_running()
-                )
+                rss = sum(p.memory_info().rss for p in procs if p.is_running())
                 samples.append({"cpu_percent": cpu, "memory_rss_bytes": rss})
             except (_psutil.NoSuchProcess, _psutil.AccessDenied):
                 break
@@ -263,6 +256,16 @@ def collect_resource_snapshot(
     return ResourceSnapshot(**base)
 
 
+def collect_host_resource_snapshot(path: str | Path = "/") -> ResourceSnapshot:
+    return collect_resource_snapshot(path=path, repo_root=None)
+
+
+def collect_repo_resource_snapshot(
+    *, path: str | Path = "/", repo_root: str | Path
+) -> ResourceSnapshot:
+    return collect_resource_snapshot(path=path, repo_root=repo_root)
+
+
 def _load_profile_document(profile_path: Path) -> dict[str, Any]:
     if not profile_path.exists():
         return {"samples": [], "runs": []}
@@ -303,19 +306,19 @@ def append_run_record(
 
 
 def _avg(samples: list[dict[str, Any]], key: str) -> float | None:
-    values = [sample.get(key) for sample in samples if isinstance(sample.get(key), (int, float))]
+    values = [sample.get(key) for sample in samples if isinstance(sample.get(key), int | float)]
     return round(sum(values) / len(values), 3) if values else None
 
 
 def _max(samples: list[dict[str, Any]], key: str) -> float | None:
-    values = [sample.get(key) for sample in samples if isinstance(sample.get(key), (int, float))]
+    values = [sample.get(key) for sample in samples if isinstance(sample.get(key), int | float)]
     return max(values, default=None)
 
 
 def _latest_numeric(samples: list[dict[str, Any]], key: str) -> int | float | None:
     for sample in reversed(samples):
         value = sample.get(key)
-        if isinstance(value, (int, float)):
+        if isinstance(value, int | float):
             return value
     return None
 
@@ -350,6 +353,7 @@ def summarize_samples(profile_path: str | Path) -> dict[str, Any]:
         "latest_git_untracked_file_count": _latest_numeric(samples, "git_untracked_file_count"),
         "latest_git_tracked_size_bytes": _latest_numeric(samples, "git_tracked_size_bytes"),
         "latest_git_non_ignored_size_bytes": _latest_numeric(samples, "git_non_ignored_size_bytes"),
+        "latest_sample_at": samples[-1].get("timestamp") if samples else None,
     }
 
 
@@ -385,7 +389,7 @@ def summarize_delta_pairs(profile_path: str | Path) -> dict[str, Any]:
             delta: dict[str, Any] = {}
             for key in ("cpu_percent", "memory_used_bytes", "gpu_util_percent"):
                 pv, sv = pre.get(key), sample.get(key)
-                if isinstance(pv, (int, float)) and isinstance(sv, (int, float)):
+                if isinstance(pv, int | float) and isinstance(sv, int | float):
                     delta[key] = sv - pv
             if delta:
                 deltas.append(delta)
@@ -394,7 +398,7 @@ def summarize_delta_pairs(profile_path: str | Path) -> dict[str, Any]:
         return {"pair_count": 0}
 
     def _avg_delta(key: str) -> float | None:
-        vals = [d[key] for d in deltas if isinstance(d.get(key), (int, float))]
+        vals = [d[key] for d in deltas if isinstance(d.get(key), int | float)]
         return round(sum(vals) / len(vals), 3) if vals else None
 
     return {
@@ -426,7 +430,7 @@ def summarize_run_records(profile_path: str | Path) -> dict[str, Any]:
         return {"run_count": len(runs), "qualifying_run_count": 0}
 
     def _qa(key: str) -> float | None:
-        vals = [r[key] for r in qualifying if isinstance(r.get(key), (int, float))]
+        vals = [r[key] for r in qualifying if isinstance(r.get(key), int | float)]
         return round(sum(vals) / len(vals), 3) if vals else None
 
     return {
@@ -487,9 +491,8 @@ def run_profiled_command(
 
     # rusage after — captures CPU time even for processes too fast to psutil-sample.
     _rusage_after = resource.getrusage(resource.RUSAGE_CHILDREN)
-    _cpu_time = (
-        (_rusage_after.ru_utime - _rusage_before.ru_utime)
-        + (_rusage_after.ru_stime - _rusage_before.ru_stime)
+    _cpu_time = (_rusage_after.ru_utime - _rusage_before.ru_utime) + (
+        _rusage_after.ru_stime - _rusage_before.ru_stime
     )
     # ru_maxrss is in kilobytes on Linux.
     _rusage_peak_rss = int(_rusage_after.ru_maxrss) * 1024

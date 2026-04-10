@@ -9,7 +9,8 @@ from .backlog import update_backlog
 from .manifest import load_manifest
 from .profile import (
     append_profile_sample,
-    collect_resource_snapshot,
+    collect_host_resource_snapshot,
+    collect_repo_resource_snapshot,
     run_profiled_command,
     summarize_delta_pairs,
     summarize_run_records,
@@ -23,7 +24,10 @@ from .stoplight import evaluate_delta, evaluate_process
 def _snapshot(args: argparse.Namespace) -> int:
     manifest = load_manifest(args.manifest)
     label = args.label or manifest.default_label
-    snapshot = collect_resource_snapshot(path=manifest.disk_path, repo_root=manifest.repo_root)
+    snapshot = collect_repo_resource_snapshot(
+        path=manifest.disk_path,
+        repo_root=manifest.repo_root,
+    )
     payload = {"name": label, "phase": args.phase, **asdict(snapshot)}
     append_profile_sample(
         manifest.profile_path,
@@ -34,6 +38,18 @@ def _snapshot(args: argparse.Namespace) -> int:
     write_summary(manifest.summary_path, summary)
     backlog_path = manifest.profile_path.parent / "backlog.json"
     update_backlog(backlog_path, "system", stoplight_evaluate(summary))
+    print(json.dumps(payload, indent=2))
+    return 0
+
+
+def _host_snapshot(args: argparse.Namespace) -> int:
+    manifest = load_manifest(args.manifest)
+    label = args.label or "host-snapshot"
+    snapshot = collect_host_resource_snapshot(path=manifest.disk_path)
+    payload = {"name": label, "phase": args.phase, **asdict(snapshot)}
+    append_profile_sample(manifest.host_profile_path, payload)
+    summary = summarize_samples(manifest.host_profile_path)
+    write_summary(manifest.host_summary_path, summary)
     print(json.dumps(payload, indent=2))
     return 0
 
@@ -76,11 +92,23 @@ def _summarize(args: argparse.Namespace) -> int:
     return 0
 
 
+def _host_summarize(args: argparse.Namespace) -> int:
+    manifest = load_manifest(args.manifest)
+    summary = summarize_samples(manifest.host_profile_path)
+    write_summary(manifest.host_summary_path, summary)
+    print(json.dumps(summary, indent=2))
+    return 0
+
+
 def _serve(args: argparse.Namespace) -> int:
     from .server import serve
 
     manifest = load_manifest(args.manifest)
-    serve(manifest.repo_root, port=args.port)
+    serve(
+        manifest.repo_root,
+        host_summary_path=manifest.host_summary_path,
+        port=args.port,
+    )
     return 0
 
 
@@ -94,6 +122,15 @@ def build_parser() -> argparse.ArgumentParser:
     snapshot_parser.add_argument("--phase", default="snapshot")
     snapshot_parser.set_defaults(func=_snapshot)
 
+    host_snapshot_parser = subparsers.add_parser(
+        "host-snapshot",
+        help="Collect one canonical host snapshot",
+    )
+    host_snapshot_parser.add_argument("--manifest", required=True)
+    host_snapshot_parser.add_argument("--label", default=None)
+    host_snapshot_parser.add_argument("--phase", default="snapshot")
+    host_snapshot_parser.set_defaults(func=_host_snapshot)
+
     run_parser = subparsers.add_parser("run", help="Profile a command with pre/post samples")
     run_parser.add_argument("--manifest", required=True)
     run_parser.add_argument("--name", default=None)
@@ -103,6 +140,13 @@ def build_parser() -> argparse.ArgumentParser:
     summarize_parser = subparsers.add_parser("summarize", help="Print the current JSON summary")
     summarize_parser.add_argument("--manifest", required=True)
     summarize_parser.set_defaults(func=_summarize)
+
+    host_summarize_parser = subparsers.add_parser(
+        "host-summarize",
+        help="Print the canonical host JSON summary",
+    )
+    host_summarize_parser.add_argument("--manifest", required=True)
+    host_summarize_parser.set_defaults(func=_host_summarize)
 
     serve_parser = subparsers.add_parser("serve", help="Start the portfolio dashboard web server")
     serve_parser.add_argument("--manifest", required=True, help="Path to tachometer profile.toml")
@@ -116,3 +160,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(list(argv) if argv is not None else None)
     return args.func(args)
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

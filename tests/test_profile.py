@@ -8,6 +8,7 @@ from unittest.mock import patch
 from tachometer.profile import (
     _gpu_snapshot,
     append_profile_sample,
+    collect_host_resource_snapshot,
     collect_resource_snapshot,
     run_profiled_command,
     summarize_delta_pairs,
@@ -61,6 +62,14 @@ def test_collect_resource_snapshot_includes_repo_metrics_for_git_repo(tmp_path: 
     assert snapshot.git_tracked_file_count == 1
     assert snapshot.git_untracked_file_count is not None
     assert snapshot.git_untracked_file_count >= 1
+
+
+def test_collect_host_resource_snapshot_excludes_repo_metrics(tmp_path: Path):
+    snapshot = collect_host_resource_snapshot(path=tmp_path)
+
+    assert snapshot.repo_root is None
+    assert snapshot.repo_file_count is None
+    assert snapshot.repo_size_bytes is None
 
 
 def test_append_and_summarize_samples(tmp_path: Path):
@@ -125,9 +134,9 @@ def test_summarize_delta_pairs_no_pairs(tmp_path: Path):
 def test_summarize_delta_pairs_matched_pairs(tmp_path: Path):
     profile_path = tmp_path / "profile.json"
     samples = [
-        {"name": "build", "phase": "pre",  "cpu_percent": 10.0, "memory_used_bytes": 1000},
+        {"name": "build", "phase": "pre", "cpu_percent": 10.0, "memory_used_bytes": 1000},
         {"name": "build", "phase": "post", "cpu_percent": 30.0, "memory_used_bytes": 1500},
-        {"name": "build", "phase": "pre",  "cpu_percent": 20.0, "memory_used_bytes": 2000},
+        {"name": "build", "phase": "pre", "cpu_percent": 20.0, "memory_used_bytes": 2000},
         {"name": "build", "phase": "post", "cpu_percent": 50.0, "memory_used_bytes": 3000},
     ]
     profile_path.write_text(json.dumps({"samples": samples, "runs": []}), encoding="utf-8")
@@ -144,7 +153,7 @@ def test_summarize_delta_pairs_matched_pairs(tmp_path: Path):
 def test_summarize_delta_pairs_unmatched_pre_ignored(tmp_path: Path):
     profile_path = tmp_path / "profile.json"
     samples = [
-        {"name": "test", "phase": "pre",  "cpu_percent": 5.0},
+        {"name": "test", "phase": "pre", "cpu_percent": 5.0},
         # no matching post
     ]
     profile_path.write_text(json.dumps({"samples": samples, "runs": []}), encoding="utf-8")
