@@ -6,6 +6,7 @@ readings increment the occurrence counter rather than duplicating entries.
 Entries are auto-resolved when the same metric is no longer red on the next
 check.
 """
+
 from __future__ import annotations
 
 import json
