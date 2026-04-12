@@ -1,4 +1,4 @@
-# REFS-PUBLIC.md — Public References
+# REFS-PUBLIC.md - Public References
 
 > Record external public repositories, datasets, documentation, APIs, or other
 > public resources that this repository utilizes or depends on.
@@ -6,22 +6,17 @@
 
 ## Public Repositories
 
-<!-- External repos this project depends on, forks, or integrates with:
-- https://github.com/org/repo — description of usage
--->
+- No fixed external code repository is the main upstream; the repo profiles local host and repository state.
 
 ## Public Datasets and APIs
 
-<!-- Publicly accessible data sources, REST APIs, or external feeds consumed here:
-- https://example.com/dataset — description of usage
--->
+- No standing public data APIs are required; snapshots are collected from the local host, git checkout, and optional sibling sidecars.
 
 ## Documentation and Specifications
 
-<!-- Reference docs, RFCs, standards, or upstream project documentation:
-- https://docs.example.com — description
--->
+- https://psutil.readthedocs.io/ - host metric collection reference
+- https://git-scm.com/docs - git CLI reference for repo snapshot metadata
 
 ## Notes
 
-<!-- Any context about how these public references are used or versioned -->
+- Optional GPU and Fedora sidecars are local integrations. Public refs are limited to the host-metric and VCS documentation behind the profiler.
