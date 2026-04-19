@@ -1,0 +1,51 @@
+@startuml classes_tachometer
+set namespaceSeparator none
+class "RepoManifest" as tachometer.model.RepoManifest {
+  category : str
+  default_label : str
+  disk_path : Path
+  host_profile_path : Path
+  host_summary_path : Path
+  kind : str
+  name : str
+  profile_path : Path
+  repo_root : Path
+  summary_path : Path
+  repo_metadata() -> dict[str, str]
+}
+class "ResourceSnapshot" as tachometer.model.ResourceSnapshot {
+  cpu_percent : float | None
+  disk_free_bytes : int | None
+  disk_total_bytes : int | None
+  disk_used_bytes : int | None
+  git_dirty_file_count : int | None
+  git_non_ignored_size_bytes : int | None
+  git_tracked_file_count : int | None
+  git_tracked_size_bytes : int | None
+  git_untracked_file_count : int | None
+  gpu_detected : bool
+  gpu_mem_total_mb : float | None
+  gpu_mem_used_mb : float | None
+  gpu_name : str | None
+  gpu_util_percent : float | None
+  loadavg_15m : float | None
+  loadavg_1m : float | None
+  loadavg_5m : float | None
+  memory_available_bytes : int | None
+  memory_total_bytes : int | None
+  memory_used_bytes : int | None
+  repo_dir_count : int | None
+  repo_file_count : int | None
+  repo_root : str | None
+  repo_size_bytes : int | None
+  timestamp : float
+}
+class "_Handler" as tachometer.server._Handler {
+  host_summary_path : Path
+  port : int
+  tachometer_root : Path
+  do_GET() -> None
+  do_POST() -> None
+  {abstract}log_message(fmt: str) -> None
+}
+@enduml

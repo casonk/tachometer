@@ -1,0 +1,44 @@
+@startuml
+title tachometer Tooling Integrations
+left to right direction
+skinparam shadowing false
+skinparam defaultFontName Monospace
+skinparam componentStyle rectangle
+skinparam linetype ortho
+rectangle ".github/workflows/ci.yml\n6 detected tools" as source_github_workflows_ci_yml #E0F2FE
+rectangle "scripts/refresh_tachometer_summaries.sh\n3 detected tools" as source_scripts_refresh_tachometer_summaries_sh #E0F2FE
+rectangle "scripts/run_all_tachometer_snapshots.sh\n2 detected tools" as source_scripts_run_all_tachometer_snapshots_sh #E0F2FE
+rectangle "scripts/run_tachometer_profile.sh\n3 detected tools" as source_scripts_run_tachometer_profile_sh #E0F2FE
+rectangle "scripts/serve_tachometer.sh\n1 detected tool" as source_scripts_serve_tachometer_sh #E0F2FE
+cloud "actions/checkout" as tool_actions_checkout #FEF3C7
+cloud "actions/setup-python" as tool_actions_setup_python #FEF3C7
+cloud "bash" as tool_bash #FEF3C7
+cloud "black" as tool_black #FEF3C7
+cloud "mapfile" as tool_mapfile #FEF3C7
+cloud "pip" as tool_pip #FEF3C7
+cloud "pytest" as tool_pytest #FEF3C7
+cloud "python3" as tool_python3 #FEF3C7
+cloud "ruff" as tool_ruff #FEF3C7
+cloud "run" as tool_run #FEF3C7
+cloud "summarize" as tool_summarize #FEF3C7
+cloud "tachometer" as tool_tachometer #FEF3C7
+source_github_workflows_ci_yml --> tool_actions_checkout
+source_github_workflows_ci_yml --> tool_actions_setup_python
+source_github_workflows_ci_yml --> tool_black
+source_github_workflows_ci_yml --> tool_pip
+source_github_workflows_ci_yml --> tool_pytest
+source_github_workflows_ci_yml --> tool_ruff
+source_scripts_refresh_tachometer_summaries_sh --> tool_mapfile
+source_scripts_refresh_tachometer_summaries_sh --> tool_python3
+source_scripts_refresh_tachometer_summaries_sh --> tool_tachometer
+source_scripts_run_all_tachometer_snapshots_sh --> tool_bash
+source_scripts_run_all_tachometer_snapshots_sh --> tool_python3
+source_scripts_run_tachometer_profile_sh --> tool_run
+source_scripts_run_tachometer_profile_sh --> tool_summarize
+source_scripts_run_tachometer_profile_sh --> tool_tachometer
+source_scripts_serve_tachometer_sh --> tool_tachometer
+note as toolingGraphSummary
+Scanned 5 tooling entrypoints.
+Detected 12 third-party tools.
+end note
+@enduml
