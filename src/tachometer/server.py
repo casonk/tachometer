@@ -734,7 +734,9 @@ _METRIC_LABELS: dict[str, str] = {
 }
 
 
-def _compute_light_tally(repos: list[dict[str, Any]], view: str) -> dict[str, dict[str, int]]:
+def _compute_light_tally(
+    repos: list[dict[str, Any]], view: str
+) -> dict[str, dict[str, int]]:
     stoplight_key = f"stoplight_{view}"
     has_key = "has_data" if view == "system" else f"has_{view}"
     tally: dict[str, dict[str, int]] = {}
@@ -764,19 +766,19 @@ def _render_light_tally(tally: dict[str, dict[str, int]]) -> str:
         chips.append(
             f'<span style="padding:3px 8px;border:1px solid #e2e8f0;border-radius:999px;'
             f'font-size:0.72rem;color:#64748b;background:white;white-space:nowrap">'
-            f"{label}&nbsp;{'&thinsp;'.join(parts)}</span>"
+            f'{label}&nbsp;{"&thinsp;".join(parts)}</span>'
         )
     if not chips:
         return ""
     return (
         '<div style="display:flex;gap:5px;flex-wrap:wrap;margin:10px 0 6px;'
-        "padding:8px 12px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;"
+        'padding:8px 12px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;'
         'align-items:center">'
         '<span style="font-size:0.7rem;color:#94a3b8;margin-right:4px;white-space:nowrap">'
-        "Lights:</span>" + "".join(chips) + "</div>"
+        "Lights:</span>"
+        + "".join(chips)
+        + "</div>"
     )
-
-
 _VIEW_DESCRIPTIONS = {
     "system": "System-wide snapshots — CPU/mem/GPU from /proc &amp; nvidia-smi, averaged across all samples",
     "delta": "Resource change during <code>run</code> subcommand — how much the system shifted pre→post",
