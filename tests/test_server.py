@@ -6,6 +6,9 @@ from pathlib import Path
 from tachometer.server import (
     _build_api_payload,
     _render_dashboard,
+    _same_origin_request,
+    _validate_bind_host,
+    gather_agent_utilization_data,
     gather_fedora_debug_data,
     gather_host_data,
 )
@@ -55,6 +58,21 @@ def test_build_api_payload_includes_host_summary():
         "summary": {"sample_count": 1},
         "stoplight_host": {"overall_light": "yellow"},
     }
+    agent_utilization = {
+        "has_data": True,
+        "snapshot": {
+            "captured_at": 1.0,
+            "overall_light": "yellow",
+            "providers": {
+                "codex": {
+                    "display_name": "Codex",
+                    "summary": "P4% / S71%",
+                    "light": "yellow",
+                }
+            },
+        },
+        "overall_light": "yellow",
+    }
 
     fedora_debug = {
         "has_data": True,
@@ -62,11 +80,13 @@ def test_build_api_payload_includes_host_summary():
         "overall_light": "red",
     }
 
-    payload = _build_api_payload(repos, host, fedora_debug)
+    payload = _build_api_payload(repos, host, agent_utilization, fedora_debug)
 
     assert payload["portfolio_light"] == "green"
     assert payload["host_light"] == "yellow"
     assert payload["host"]["summary"]["sample_count"] == 1
+    assert payload["agent_utilization_light"] == "yellow"
+    assert payload["agent_utilization"]["snapshot"]["providers"]["codex"]["summary"] == "P4% / S71%"
     assert payload["fedora_debug_light"] == "red"
 
 
@@ -101,6 +121,30 @@ def test_render_dashboard_includes_host_metrics():
                 "gpu": "green",
             },
         },
+    }
+    agent_utilization = {
+        "has_data": True,
+        "snapshot": {
+            "captured_at": 4_102_444_800,
+            "providers": {
+                "codex": {
+                    "display_name": "Codex",
+                    "summary": "P4% / S71%",
+                    "light": "yellow",
+                },
+                "claude": {
+                    "display_name": "Claude",
+                    "summary": "432.0k on 2026-04-20",
+                    "light": "unknown",
+                },
+                "copilot": {
+                    "display_name": "Copilot",
+                    "summary": "3 premium / 1.1M session toks",
+                    "light": "unknown",
+                },
+            },
+        },
+        "overall_light": "yellow",
     }
     fedora_debug = {
         "has_data": True,
@@ -157,12 +201,16 @@ def test_render_dashboard_includes_host_metrics():
         "overall_light": "red",
     }
 
-    html = _render_dashboard(repos, host, fedora_debug, port=5100)
+    html = _render_dashboard(repos, host, agent_utilization, fedora_debug, port=5100)
 
     assert "Portfolio system aggregate" in html
     assert "Host" in html
     assert "Disk" in html
     assert "25.0%" in html
+    assert "AI Utilization" in html
+    assert "Codex" in html
+    assert "Claude" in html
+    assert "Copilot" in html
     assert "Fedora Debug" in html
     assert "Collection" in html
     assert "Display" in html
@@ -180,6 +228,11 @@ def test_render_dashboard_keeps_legacy_fedora_debug_sidecar_shape():
         "has_data": False,
         "summary": {},
         "stoplight_host": {},
+    }
+    agent_utilization = {
+        "has_data": False,
+        "snapshot": {},
+        "overall_light": "unknown",
     }
     fedora_debug = {
         "has_data": True,
@@ -199,11 +252,37 @@ def test_render_dashboard_keeps_legacy_fedora_debug_sidecar_shape():
         "overall_light": "red",
     }
 
-    html = _render_dashboard(repos, host, fedora_debug, port=5100)
+    html = _render_dashboard(repos, host, agent_utilization, fedora_debug, port=5100)
 
     assert "Warnings" in html
     assert "Coredumps" in html
     assert "GPU" in html
+
+
+def test_gather_agent_utilization_data_loads_sidecar(tmp_path: Path):
+    sidecar_path = tmp_path / "agent-utilization.json"
+    sidecar_path.write_text(
+        json.dumps(
+            {
+                "captured_at": 1.0,
+                "overall_light": "yellow",
+                "providers": {
+                    "codex": {
+                        "display_name": "Codex",
+                        "summary": "P4% / S71%",
+                        "light": "yellow",
+                    }
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    agent_utilization = gather_agent_utilization_data(sidecar_path)
+
+    assert agent_utilization["has_data"] is True
+    assert agent_utilization["overall_light"] == "yellow"
+    assert agent_utilization["snapshot"]["providers"]["codex"]["summary"] == "P4% / S71%"
 
 
 def test_gather_fedora_debug_data_loads_sidecar(tmp_path: Path):
@@ -229,3 +308,31 @@ def test_gather_fedora_debug_data_loads_sidecar(tmp_path: Path):
     assert fedora_debug["has_data"] is True
     assert fedora_debug["overall_light"] == "yellow"
     assert fedora_debug["signals"]["buckets"]["storage"]["summary"] == "btrfs counters"
+
+
+def test_validate_bind_host_rejects_non_loopback_without_opt_in():
+    try:
+        _validate_bind_host("0.0.0.0", allow_remote=False)
+    except ValueError as exc:
+        assert "--allow-remote" in str(exc)
+    else:  # pragma: no cover - defensive
+        raise AssertionError("expected ValueError for non-loopback bind")
+
+
+def test_validate_bind_host_allows_loopback_and_explicit_remote():
+    _validate_bind_host("127.0.0.1", allow_remote=False)
+    _validate_bind_host("0.0.0.0", allow_remote=True)
+
+
+def test_same_origin_request_requires_matching_host():
+    headers = {
+        "Host": "127.0.0.1:5100",
+        "Origin": "http://127.0.0.1:5100",
+    }
+    assert _same_origin_request(headers) is True
+
+    mismatched = {
+        "Host": "127.0.0.1:5100",
+        "Origin": "http://localhost:5100",
+    }
+    assert _same_origin_request(mismatched) is False

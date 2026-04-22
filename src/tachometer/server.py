@@ -16,6 +16,7 @@ Usage (via CLI):
 from __future__ import annotations
 
 import contextlib
+import ipaddress
 import json
 import subprocess
 import threading
@@ -58,6 +59,39 @@ _RUN_STATE: dict[str, Any] = {
     "last_finished": None,
     "log_path": None,
 }
+
+
+def _is_loopback_host(host: str) -> bool:
+    candidate = host.strip()
+    if not candidate:
+        return False
+    if candidate.startswith("[") and candidate.endswith("]"):
+        candidate = candidate[1:-1]
+    if candidate.lower() == "localhost":
+        return True
+    try:
+        return ipaddress.ip_address(candidate).is_loopback
+    except ValueError:
+        return False
+
+
+def _validate_bind_host(host: str, *, allow_remote: bool) -> None:
+    if _is_loopback_host(host) or allow_remote:
+        return
+    raise ValueError(
+        "Refusing to bind tachometer serve to a non-loopback host without --allow-remote."
+    )
+
+
+def _same_origin_request(headers: Any) -> bool:
+    host = str(headers.get("Host", "")).strip()
+    if not host:
+        return False
+    source = str(headers.get("Origin") or headers.get("Referer") or "").strip()
+    if not source:
+        return False
+    parsed = urlparse(source)
+    return bool(parsed.scheme and parsed.netloc and parsed.netloc == host)
 
 
 def _start_snapshot_run(tachometer_root: Path) -> bool:
@@ -187,10 +221,29 @@ def gather_host_data(host_summary_path: Path) -> dict[str, Any]:
     summary = _load_json(host_summary_path)
     has_data = bool(summary.get("sample_count", 0))
     stoplight_host = evaluate_host(summary) if has_data else {}
+    host_backlog = load_backlog(host_summary_path.parent / "host-backlog.json")
     return {
         "has_data": has_data,
         "summary": summary,
         "stoplight_host": stoplight_host,
+        "backlog": host_backlog,
+        "backlog_open": len(open_items(host_backlog)),
+    }
+
+
+def _agent_utilization_sidecar_path(tachometer_root: Path) -> Path:
+    return tachometer_root / ".tachometer" / "agent-utilization.json"
+
+
+def gather_agent_utilization_data(sidecar_path: Path) -> dict[str, Any]:
+    snapshot = _load_json(sidecar_path)
+    providers = snapshot.get("providers", {}) if isinstance(snapshot, dict) else {}
+    if not isinstance(providers, dict):
+        providers = {}
+    return {
+        "has_data": bool(providers),
+        "snapshot": snapshot,
+        "overall_light": snapshot.get("overall_light", "unknown"),
     }
 
 
@@ -232,6 +285,37 @@ def _fmt_bytes(b: float | None) -> str:
 
 def _fmt_pct(v: float | None) -> str:
     return f"{v:.1f}%" if v is not None else "—"
+
+
+def _fmt_uptime(seconds: float | None) -> str:
+    if seconds is None:
+        return "—"
+    s = int(seconds)
+    d, s = divmod(s, 86400)
+    h, s = divmod(s, 3600)
+    m = s // 60
+    if d:
+        return f"{d}d {h}h"
+    if h:
+        return f"{h}h {m}m"
+    return f"{m}m"
+
+
+def _fmt_age(ts: float | None) -> str:
+    """Format a unix timestamp as a human-readable age (e.g. '3h ago')."""
+    if ts is None:
+        return "—"
+    seconds = max(0.0, time.time() - ts)
+    d, rem = divmod(int(seconds), 86400)
+    h, rem = divmod(rem, 3600)
+    m = rem // 60
+    if d:
+        return f"{d}d ago"
+    if h:
+        return f"{h}h ago"
+    if m:
+        return f"{m}m ago"
+    return "just now"
 
 
 def _fmt_ratio_pct(v: float | None) -> str:
@@ -338,12 +422,28 @@ def _render_host_banner(host: dict[str, Any]) -> str:
     stoplight = host["stoplight_host"]
     lights = stoplight.get("lights", {})
     metrics = stoplight.get("metrics", {})
+    backlog_open = host.get("backlog_open", 0)
+    host_badge = (
+        f'<span title="{backlog_open} open host backlog item(s)" '
+        f'style="background:#ef4444;color:white;border-radius:10px;'
+        f'padding:1px 6px;font-size:0.65rem;font-weight:700;margin-left:4px"> '
+        f"{backlog_open}</span>"
+        if backlog_open
+        else ""
+    )
+    summary = host.get("summary", {})
+    hostname = summary.get("latest_hostname")
+    uptime = summary.get("latest_uptime_seconds")
+    procs = summary.get("latest_process_count")
+    temp = summary.get("latest_cpu_temp_celsius")
+
     chips = [
         _banner_metric(
-            "Host",
-            _LIGHT_LABEL.get(stoplight.get("overall_light", "unknown"), "—"),
+            "Host" + host_badge,
+            hostname or _LIGHT_LABEL.get(stoplight.get("overall_light", "unknown"), "—"),
             stoplight.get("overall_light", "unknown"),
         ),
+        _banner_metric("Up", _fmt_uptime(uptime), "unknown"),
         _banner_metric(
             "CPU",
             _fmt_pct(metrics.get("cpu_percent")),
@@ -364,7 +464,11 @@ def _render_host_banner(host: dict[str, Any]) -> str:
             _fmt_pct(metrics.get("gpu_util_percent")),
             lights.get("gpu", "unknown"),
         ),
+        _banner_metric("Procs", f"{int(procs):,}" if procs is not None else "—", "unknown"),
     ]
+    if temp is not None:
+        chips.append(_banner_metric("Temp", f"{temp:.0f}°C", "unknown"))
+
     return (
         '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">'
         + "".join(chips)
@@ -499,6 +603,56 @@ def _render_fedora_debug_banner(fedora_debug: dict[str, Any]) -> str:
     )
 
 
+def _render_agent_utilization_banner(agent_utilization: dict[str, Any]) -> str:
+    if not agent_utilization["has_data"]:
+        return (
+            '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">'
+            f"{_banner_metric('AI Utilization', 'Awaiting snapshot', 'unknown')}"
+            "</div>"
+        )
+
+    snapshot = agent_utilization["snapshot"]
+    captured_at = snapshot.get("captured_at")
+    snapshot_label = (
+        _fmt_rel_time(float(captured_at) - time.time())
+        if isinstance(captured_at, int | float)
+        else "unknown"
+    )
+    snapshot_light = _snapshot_age_light(captured_at)
+    display_light = worst_light(
+        {
+            0: agent_utilization.get("overall_light", "unknown"),
+            1: snapshot_light,
+        }
+    )
+    chips = [
+        _banner_metric(
+            "AI Utilization",
+            _LIGHT_LABEL.get(display_light, "—"),
+            display_light,
+        ),
+        _banner_metric("Snapshot", snapshot_label, snapshot_light),
+    ]
+    providers = snapshot.get("providers", {})
+    if isinstance(providers, dict):
+        for key in ("codex", "claude", "copilot"):
+            provider = providers.get(key)
+            if not isinstance(provider, dict):
+                continue
+            chips.append(
+                _banner_metric(
+                    str(provider.get("display_name", key.title())),
+                    str(provider.get("summary", "unknown")),
+                    str(provider.get("light", "unknown")),
+                )
+            )
+    return (
+        '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">'
+        + "".join(chips)
+        + "</div>"
+    )
+
+
 def _gauge(
     value: float | None,
     max_val: float,
@@ -549,6 +703,80 @@ _VIEW_LABELS = {
     "process": "Process (psutil)",
 }
 
+_METRIC_LABELS: dict[str, str] = {
+    # system
+    "cpu": "CPU",
+    "loadavg": "Load",
+    "memory": "Memory",
+    "swap": "Swap",
+    "disk": "Disk",
+    "gpu": "GPU",
+    "gpu_mem": "VRAM",
+    "repo_size": "Repo Size",
+    "artefact_size": "Artefacts",
+    # delta
+    "delta_cpu": "\u0394CPU",
+    "delta_memory": "\u0394Mem",
+    "delta_gpu": "\u0394GPU",
+    "delta_disk_read": "\u0394Disk\u2193",
+    "delta_disk_write": "\u0394Disk\u2191",
+    "delta_net_recv": "\u0394Net\u2193",
+    "delta_net_sent": "\u0394Net\u2191",
+    # process
+    "proc_avg_cpu": "CPU avg",
+    "proc_peak_cpu": "CPU peak",
+    "proc_avg_rss": "RSS avg",
+    "proc_peak_rss": "RSS peak",
+    "proc_runtime": "Runtime",
+    "proc_threads": "Threads",
+    "proc_major_faults": "Faults",
+    "proc_invol_ctx": "Ctx Sw",
+}
+
+
+def _compute_light_tally(repos: list[dict[str, Any]], view: str) -> dict[str, dict[str, int]]:
+    stoplight_key = f"stoplight_{view}"
+    has_key = "has_data" if view == "system" else f"has_{view}"
+    tally: dict[str, dict[str, int]] = {}
+    for repo in repos:
+        if not repo.get(has_key):
+            continue
+        for light_key, light in repo.get(stoplight_key, {}).get("lights", {}).items():
+            bucket = tally.setdefault(light_key, {"green": 0, "yellow": 0, "red": 0, "unknown": 0})
+            bucket[light] = bucket.get(light, 0) + 1
+    return tally
+
+
+def _render_light_tally(tally: dict[str, dict[str, int]]) -> str:
+    if not tally:
+        return ""
+    chips = []
+    for light_key, counts in tally.items():
+        label = _METRIC_LABELS.get(light_key, light_key)
+        parts = []
+        for color in ("red", "yellow", "green"):
+            n = counts.get(color, 0)
+            if n:
+                c = _LIGHT_COLOR[color]
+                parts.append(f'<strong style="color:{c}">{n}</strong>')
+        if not parts:
+            continue
+        chips.append(
+            f'<span style="padding:3px 8px;border:1px solid #e2e8f0;border-radius:999px;'
+            f'font-size:0.72rem;color:#64748b;background:white;white-space:nowrap">'
+            f"{label}&nbsp;{'&thinsp;'.join(parts)}</span>"
+        )
+    if not chips:
+        return ""
+    return (
+        '<div style="display:flex;gap:5px;flex-wrap:wrap;margin:10px 0 6px;'
+        "padding:8px 12px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;"
+        'align-items:center">'
+        '<span style="font-size:0.7rem;color:#94a3b8;margin-right:4px;white-space:nowrap">'
+        "Lights:</span>" + "".join(chips) + "</div>"
+    )
+
+
 _VIEW_DESCRIPTIONS = {
     "system": "System-wide snapshots — CPU/mem/GPU from /proc &amp; nvidia-smi, averaged across all samples",
     "delta": "Resource change during <code>run</code> subcommand — how much the system shifted pre→post",
@@ -582,48 +810,94 @@ def _render_system_row(
     overall = st.get("overall_light", "unknown")
 
     cpu = metrics.get("cpu_percent")
+    load_ratio = metrics.get("loadavg_ratio")
     mem_ratio = metrics.get("memory_utilization_ratio")
+    swap_ratio = metrics.get("swap_utilization_ratio")
     gpu = metrics.get("gpu_util_percent")
+    gpu_mem_ratio = metrics.get("gpu_mem_utilization_ratio")
     repo_size = metrics.get("repo_size_bytes")
     mem_pct = mem_ratio * 100 if mem_ratio is not None else None
+    swap_pct = swap_ratio * 100 if swap_ratio is not None else None
+    gpu_mem_pct = gpu_mem_ratio * 100 if gpu_mem_ratio is not None else None
+    load_pct = load_ratio * 100 if load_ratio is not None else None
 
     non_ignored_size = s.get("latest_git_non_ignored_size_bytes")
     tracked_size = s.get("latest_git_tracked_size_bytes")
     files = s.get("latest_git_tracked_file_count")
     dirty = s.get("latest_git_dirty_file_count")
+    commits = s.get("latest_git_commit_count")
+    dep_count = s.get("latest_dep_count")
+    artefact_size = s.get("latest_artefact_size_bytes")
 
     _cpu_t = DEFAULT_THRESHOLDS["cpu_percent"]
+    _load_t = DEFAULT_THRESHOLDS["loadavg_ratio"]
     _mem_t = DEFAULT_THRESHOLDS["memory_utilization_ratio"]
+    _swap_t = DEFAULT_THRESHOLDS["swap_utilization_ratio"]
     _gpu_t = DEFAULT_THRESHOLDS["gpu_util_percent"]
+    _gpu_mem_t = DEFAULT_THRESHOLDS["gpu_mem_utilization_ratio"]
     _sz_t = DEFAULT_THRESHOLDS["repo_size_bytes"]
+    _art_t = DEFAULT_THRESHOLDS["artefact_size_bytes"]
 
     def _size_row(label: str, val: float | None, light: str = "unknown") -> str:
         bar = _gauge(val, max_repo_bytes, light, label=_fmt_bytes(val), **_sz_t)
         return f'<div style="font-size:0.68rem;color:#94a3b8;margin-top:4px">{label}</div>{bar}'
 
+    def _sub_gauge(label: str, pct: float | None, light: str, t: dict) -> str:
+        green_max_pct = t["green_max"] * 100
+        yellow_max_pct = t["yellow_max"] * 100
+        g = _gauge(pct, 100, light, green_max=green_max_pct, yellow_max=yellow_max_pct)
+        return f'<div style="font-size:0.65rem;color:#94a3b8;margin-top:5px">{label}</div>{g}'
+
     dirty_span = f', <span style="color:#ef4444">{int(dirty)}\u2717</span>' if dirty else ""
+    commit_span = (
+        f'<div style="font-size:0.65rem;color:#94a3b8">{int(commits):,} commits</div>'
+        if commits
+        else ""
+    )
+    dep_span = (
+        f'<div style="font-size:0.65rem;color:#94a3b8">{int(dep_count)} deps</div>'
+        if dep_count
+        else ""
+    )
     repo_cell = (
         f'<div style="font-size:0.7rem;color:#64748b">'
-        f"{int(files) if files else '—'} tracked{dirty_span}</div>"
+        f"{int(files) if files else '—'} tracked{dirty_span}</div>" + commit_span + dep_span
     )
 
+    art_light = light_max(artefact_size, **_art_t) if artefact_size else "unknown"
     size_cell = (
         _size_row("total", repo_size, lights.get("repo_size", "unknown"))
         + _size_row("non-ignored", non_ignored_size, light_max(non_ignored_size, **_sz_t))
         + _size_row("tracked", tracked_size, light_max(tracked_size, **_sz_t))
+        + (
+            f'<div style="font-size:0.68rem;color:#94a3b8;margin-top:4px">artefacts</div>'
+            f"{_gauge(artefact_size, 1e9, art_light, label=_fmt_bytes(artefact_size), **_art_t)}"
+            if artefact_size
+            else ""
+        )
     )
 
-    # Memory thresholds are ratios (0-1); display is percent, so scale × 100.
     mem_green = _mem_t["green_max"] * 100
     mem_yellow = _mem_t["yellow_max"] * 100
+    mem_cell = _gauge(
+        mem_pct, 100, lights.get("memory", "unknown"), green_max=mem_green, yellow_max=mem_yellow
+    ) + _sub_gauge("swap", swap_pct, lights.get("swap", "unknown"), _swap_t)
+
+    cpu_cell = _gauge(cpu, 100, lights.get("cpu", "unknown"), **_cpu_t) + _sub_gauge(
+        "load avg", load_pct, lights.get("loadavg", "unknown"), _load_t
+    )
+
+    gpu_cell = _gauge(gpu, 100, lights.get("gpu", "unknown"), **_gpu_t) + _sub_gauge(
+        "VRAM", gpu_mem_pct, lights.get("gpu_mem", "unknown"), _gpu_mem_t
+    )
 
     return (
         f"<tr>"
         f"<td>{_name_cell(repo)}</td>"
         f"<td>{_dot(overall)}{_badge(overall)}</td>"
-        f"<td>{_gauge(cpu, 100, lights.get('cpu', 'unknown'), **_cpu_t)}</td>"
-        f"<td>{_gauge(mem_pct, 100, lights.get('memory', 'unknown'), green_max=mem_green, yellow_max=mem_yellow)}</td>"
-        f"<td>{_gauge(gpu, 100, lights.get('gpu', 'unknown'), **_gpu_t)}</td>"
+        f"<td>{cpu_cell}</td>"
+        f"<td>{mem_cell}</td>"
+        f"<td>{gpu_cell}</td>"
         f"<td>{size_cell}</td>"
         f"<td>{repo_cell}</td>"
         f"<td>{_schedule_cell(repo, next_run_ts)}</td>"
@@ -679,9 +953,16 @@ def _schedule_cell(repo: dict[str, Any], next_run_ts: float) -> str:
     return last_str + next_str
 
 
+def _fmt_signed_bytes(v: float | None) -> str | None:
+    if v is None:
+        return None
+    sign = "+" if v >= 0 else ""
+    return f"{sign}{_fmt_bytes(abs(v))}"
+
+
 def _render_delta_row(repo: dict[str, Any], next_run_ts: float = 0.0) -> str:
     if not repo["has_delta"]:
-        return _no_run_cell(repo, colspan=5)
+        return _no_run_cell(repo, colspan=8)
 
     st = repo["stoplight_delta"]
     lights = st.get("lights", {})
@@ -692,37 +973,59 @@ def _render_delta_row(repo: dict[str, Any], next_run_ts: float = 0.0) -> str:
     cpu = metrics.get("avg_delta_cpu_percent")
     mem = metrics.get("avg_delta_memory_used_bytes")
     gpu = metrics.get("avg_delta_gpu_util_percent")
+    disk_read = metrics.get("avg_delta_disk_io_read_bytes")
+    disk_write = metrics.get("avg_delta_disk_io_write_bytes")
+    net_recv = metrics.get("avg_delta_net_recv_bytes")
+    net_sent = metrics.get("avg_delta_net_sent_bytes")
 
     cpu_label = f"{'+' if (cpu or 0) >= 0 else ''}{cpu:.1f}%" if cpu is not None else None
-    mem_label = (
-        f"{'+' if (mem or 0) >= 0 else ''}{_fmt_bytes(abs(mem) if mem else None)}"
-        if mem is not None
-        else None
-    )
     gpu_label = f"{'+' if (gpu or 0) >= 0 else ''}{gpu:.1f}%" if gpu is not None else None
 
+    def _clamp(v: float | None) -> float | None:
+        return max(0.0, v) if v is not None else None
+
     _dt = DELTA_THRESHOLDS
+
+    def _delta_sub(
+        label: str, v: float | None, max_v: float, light_key: str, thresh_key: str
+    ) -> str:
+        g = _gauge(
+            _clamp(v),
+            max_v,
+            lights.get(light_key, "unknown"),
+            label=_fmt_bytes(v),
+            **_dt[thresh_key],
+        )
+        return f'<div style="font-size:0.65rem;color:#94a3b8;margin-top:5px">{label}</div>{g}'
+
     cpu_gauge = _gauge(
-        max(0.0, cpu) if cpu is not None else None,
+        _clamp(cpu),
         100,
         lights.get("delta_cpu", "unknown"),
         label=cpu_label,
         **_dt["delta_cpu_percent"],
     )
     mem_gauge = _gauge(
-        max(0.0, mem) if mem is not None else None,
+        _clamp(mem),
         2e9,
         lights.get("delta_memory", "unknown"),
-        label=mem_label,
+        label=_fmt_signed_bytes(mem),
         **_dt["delta_memory_used_bytes"],
     )
     gpu_gauge = _gauge(
-        max(0.0, gpu) if gpu is not None else None,
+        _clamp(gpu),
         100,
         lights.get("delta_gpu", "unknown"),
         label=gpu_label,
         **_dt["delta_gpu_util_percent"],
     )
+
+    disk_cell = _delta_sub(
+        "↓ read", disk_read, 5e9, "delta_disk_read", "delta_disk_io_read_bytes"
+    ) + _delta_sub("↑ write", disk_write, 2e9, "delta_disk_write", "delta_disk_io_write_bytes")
+    net_cell = _delta_sub(
+        "↓ recv", net_recv, 500e6, "delta_net_recv", "delta_net_recv_bytes"
+    ) + _delta_sub("↑ sent", net_sent, 500e6, "delta_net_sent", "delta_net_sent_bytes")
 
     return (
         f"<tr>"
@@ -731,15 +1034,26 @@ def _render_delta_row(repo: dict[str, Any], next_run_ts: float = 0.0) -> str:
         f"<td>{cpu_gauge}</td>"
         f"<td>{mem_gauge}</td>"
         f"<td>{gpu_gauge}</td>"
+        f"<td>{disk_cell}</td>"
+        f"<td>{net_cell}</td>"
         f'<td style="color:#64748b;font-size:0.75rem">{pair_count} pairs</td>'
         f"<td>{_schedule_cell(repo, next_run_ts)}</td>"
         f"</tr>"
     )
 
 
+def _fmt_runtime(s: float | None) -> str:
+    if s is None:
+        return "—"
+    if s < 60:
+        return f"{s:.1f}s"
+    m, rem = divmod(int(s), 60)
+    return f"{m}m {rem}s"
+
+
 def _render_process_row(repo: dict[str, Any], next_run_ts: float = 0.0) -> str:
     if not repo["has_process"]:
-        return _no_run_cell(repo, colspan=6)
+        return _no_run_cell(repo, colspan=9)
 
     st = repo["stoplight_process"]
     lights = st.get("lights", {})
@@ -752,8 +1066,92 @@ def _render_process_row(repo: dict[str, Any], next_run_ts: float = 0.0) -> str:
     peak_cpu = metrics.get("avg_proc_peak_cpu_percent")
     avg_rss = metrics.get("avg_proc_memory_rss_bytes")
     peak_rss = metrics.get("avg_proc_peak_memory_rss_bytes")
+    avg_runtime = metrics.get("avg_runtime_seconds")
+    peak_threads = metrics.get("avg_proc_peak_thread_count")
+    major_faults = metrics.get("avg_proc_major_faults")
+    invol_ctx = metrics.get("avg_proc_involuntary_ctx_switches")
+    energy_j = rs.get("avg_proc_energy_joules")
+    latest_rt = rs.get("latest_runtime_seconds")
+    run_count = rs.get("run_count", 0)
+    fail_count = rs.get("fail_count", 0)
+    last_failed_at = rs.get("last_failed_at")
+    last_failed_rc = rs.get("last_failed_returncode")
+    last_run_at = rs.get("last_run_at")
+
+    rt_sublabel = (
+        f'<div style="font-size:0.65rem;color:#94a3b8">latest {_fmt_runtime(latest_rt)}</div>'
+        if latest_rt is not None
+        else ""
+    )
 
     _pt = PROCESS_THRESHOLDS
+    rt_gauge = (
+        _gauge(
+            avg_runtime,
+            300,
+            lights.get("proc_runtime", "unknown"),
+            label=_fmt_runtime(avg_runtime),
+            **_pt["proc_avg_runtime_seconds"],
+        )
+        + rt_sublabel
+    )
+
+    def _extras_row(label: str, val: float | None, light: str, t: dict, fmt_fn=None) -> str:
+        display = (
+            fmt_fn(val)
+            if (fmt_fn and val is not None)
+            else (f"{int(val):,}" if val is not None else "—")
+        )
+        c = _LIGHT_COLOR.get(light, "#94a3b8")
+        return (
+            f'<div style="font-size:0.65rem;color:#94a3b8;margin-top:4px">{label}</div>'
+            f'<div style="font-size:0.78rem;color:{c}">{display}</div>'
+        )
+
+    def _fmt_energy(j: float) -> str:
+        return f"{j:.1f} J" if j >= 1.0 else f"{j * 1000:.0f} mJ"
+
+    extras_cell = (
+        _extras_row(
+            "threads peak",
+            peak_threads,
+            lights.get("proc_threads", "unknown"),
+            _pt["proc_peak_thread_count"],
+        )
+        + _extras_row(
+            "major faults",
+            major_faults,
+            lights.get("proc_major_faults", "unknown"),
+            _pt["proc_major_faults"],
+        )
+        + _extras_row(
+            "invol ctx sw",
+            invol_ctx,
+            lights.get("proc_invol_ctx", "unknown"),
+            _pt["proc_involuntary_ctx_switches"],
+        )
+        + _extras_row("energy", energy_j, "unknown", {}, fmt_fn=_fmt_energy)
+    )
+
+    # Last-run / failure summary appended below the numeric extras.
+    if last_failed_at is not None:
+        fail_color = "#ef4444"
+        fail_label = f"exit {last_failed_rc}" if last_failed_rc is not None else "failed"
+        extras_cell += (
+            f'<div style="font-size:0.65rem;color:#94a3b8;margin-top:6px">last fail</div>'
+            f'<div style="font-size:0.78rem;color:{fail_color}">'
+            f"{_fmt_age(last_failed_at)} ({fail_label})</div>"
+        )
+    success_count = run_count - fail_count
+    if run_count:
+        rate_pct = round(success_count / run_count * 100)
+        rate_color = "#22c55e" if rate_pct == 100 else ("#eab308" if rate_pct >= 80 else "#ef4444")
+        extras_cell += (
+            f'<div style="font-size:0.65rem;color:#94a3b8;margin-top:4px">success rate</div>'
+            f'<div style="font-size:0.78rem;color:{rate_color}">'
+            f"{rate_pct}% ({success_count}/{run_count})</div>"
+        )
+
     return (
         f"<tr>"
         f"<td>{_name_cell(repo)}</td>"
@@ -762,7 +1160,11 @@ def _render_process_row(repo: dict[str, Any], next_run_ts: float = 0.0) -> str:
         f"<td>{_gauge(peak_cpu, 100, lights.get('proc_peak_cpu', 'unknown'), **_pt['proc_peak_cpu_percent'])}</td>"
         f"<td>{_gauge(avg_rss, 4e9, lights.get('proc_avg_rss', 'unknown'), label=_fmt_bytes(avg_rss), **_pt['proc_avg_memory_rss_bytes'])}</td>"
         f"<td>{_gauge(peak_rss, 4e9, lights.get('proc_peak_rss', 'unknown'), label=_fmt_bytes(peak_rss), **_pt['proc_peak_memory_rss_bytes'])}</td>"
-        f'<td style="color:#64748b;font-size:0.75rem">{qualifying} runs</td>'
+        f"<td>{rt_gauge}</td>"
+        f"<td>{extras_cell}</td>"
+        f'<td style="color:#64748b;font-size:0.75rem">{qualifying} runs'
+        f"{"<br><span style='color:#94a3b8'>" + _fmt_age(last_run_at) + '</span>' if last_run_at else ''}"
+        f"</td>"
         f"<td>{_schedule_cell(repo, next_run_ts)}</td>"
         f"</tr>"
     )
@@ -829,6 +1231,7 @@ def _run_button(view: str = "system") -> str:
 def _render_dashboard(
     repos: list[dict[str, Any]],
     host: dict[str, Any],
+    agent_utilization: dict[str, Any],
     fedora_debug: dict[str, Any],
     port: int,
     view: str = "system",
@@ -849,7 +1252,9 @@ def _render_dashboard(
         "unknown": "Awaiting Data",
     }.get(portfolio_light, "Awaiting Data")
     host_banner = _render_host_banner(host)
+    agent_utilization_banner = _render_agent_utilization_banner(agent_utilization)
     fedora_debug_banner = _render_fedora_debug_banner(fedora_debug)
+    tally_html = _render_light_tally(_compute_light_tally(repos, view))
 
     # Dynamic gauge scale — largest total repo size = 100% bar width.
     max_repo_bytes = (
@@ -868,9 +1273,9 @@ def _render_dashboard(
     if view == "system":
         headers = "<th>Repository</th><th>Status</th><th>CPU % (sys)</th><th>Memory % (sys)</th><th>GPU % (sys)</th><th>Repo Size</th><th>Repo</th><th>Schedule</th>"
     elif view == "delta":
-        headers = "<th>Repository</th><th>Status</th><th>ΔCPU %</th><th>ΔMemory</th><th>ΔGPU %</th><th>Pairs</th><th>Schedule</th>"
+        headers = "<th>Repository</th><th>Status</th><th>ΔCPU %</th><th>ΔMemory</th><th>ΔGPU %</th><th>ΔDisk I/O</th><th>ΔNetwork</th><th>Pairs</th><th>Schedule</th>"
     else:
-        headers = "<th>Repository</th><th>Status</th><th>Avg CPU %</th><th>Peak CPU %</th><th>Avg RSS</th><th>Peak RSS</th><th>Runs</th><th>Schedule</th>"
+        headers = "<th>Repository</th><th>Status</th><th>Avg CPU %</th><th>Peak CPU %</th><th>Avg RSS</th><th>Peak RSS</th><th>Avg Runtime</th><th>Extras</th><th>Runs</th><th>Schedule</th>"
 
     rows = []
     current_category = None
@@ -959,10 +1364,12 @@ def _render_dashboard(
     </div>
     <div style="display:flex;flex-direction:column;align-items:flex-end;gap:8px">
       {host_banner}
+      {agent_utilization_banner}
       {fedora_debug_banner}
     </div>
   </div>
 </div>
+{tally_html}
 <table>
 <thead>
 <tr>
@@ -986,6 +1393,7 @@ def _render_dashboard(
 def _build_api_payload(
     repos: list[dict[str, Any]],
     host: dict[str, Any],
+    agent_utilization: dict[str, Any],
     fedora_debug: dict[str, Any],
 ) -> dict[str, Any]:
     all_lights = {
@@ -1003,6 +1411,12 @@ def _build_api_payload(
             "has_data": host["has_data"],
             "summary": host["summary"],
             "stoplight": host["stoplight_host"],
+        },
+        "agent_utilization_light": agent_utilization.get("overall_light", "unknown"),
+        "agent_utilization": {
+            "has_data": agent_utilization["has_data"],
+            "snapshot": agent_utilization["snapshot"],
+            "overall_light": agent_utilization.get("overall_light", "unknown"),
         },
         "fedora_debug_light": fedora_debug.get("overall_light", "unknown"),
         "fedora_debug": {
@@ -1055,12 +1469,18 @@ class _Handler(BaseHTTPRequestHandler):
 
         repos = gather_repo_data(self.__class__.tachometer_root)
         host = gather_host_data(self.__class__.host_summary_path)
+        agent_utilization = gather_agent_utilization_data(
+            _agent_utilization_sidecar_path(self.__class__.tachometer_root)
+        )
         fedora_debug = gather_fedora_debug_data(
             _fedora_debug_sidecar_path(self.__class__.tachometer_root)
         )
         if parsed.path == "/api/status":
             self._send(
-                json.dumps(_build_api_payload(repos, host, fedora_debug), indent=2),
+                json.dumps(
+                    _build_api_payload(repos, host, agent_utilization, fedora_debug),
+                    indent=2,
+                ),
                 "application/json",
             )
         elif parsed.path in ("/", "/index.html"):
@@ -1068,6 +1488,7 @@ class _Handler(BaseHTTPRequestHandler):
                 _render_dashboard(
                     repos,
                     host,
+                    agent_utilization,
                     fedora_debug,
                     self.__class__.port,
                     view=view,
@@ -1078,6 +1499,9 @@ class _Handler(BaseHTTPRequestHandler):
             self._send("Not Found", "text/plain", 404)
 
     def do_POST(self) -> None:
+        if not _same_origin_request(self.headers):
+            self._send("Forbidden", "text/plain", 403)
+            return
         parsed = urlparse(self.path)
         qs = parse_qs(parsed.query)
         view = qs.get("view", ["system"])[0]
@@ -1097,10 +1521,13 @@ class _Handler(BaseHTTPRequestHandler):
 def serve(
     tachometer_root: Path,
     *,
+    host: str = "127.0.0.1",
     host_summary_path: Path | None = None,
     port: int = 5100,
+    allow_remote: bool = False,
 ) -> None:
     """Start the dashboard HTTP server (blocking)."""
+    _validate_bind_host(host, allow_remote=allow_remote)
     handler = type(
         "Handler",
         (_Handler,),
@@ -1111,9 +1538,9 @@ def serve(
             "port": port,
         },
     )
-    httpd = HTTPServer(("0.0.0.0", port), handler)
-    print(f"Tachometer dashboard : http://localhost:{port}/")
-    print(f"JSON status API      : http://localhost:{port}/api/status")
+    httpd = HTTPServer((host, port), handler)
+    print(f"Tachometer dashboard : http://{host}:{port}/")
+    print(f"JSON status API      : http://{host}:{port}/api/status")
     print("Press Ctrl-C to stop.")
     with contextlib.suppress(KeyboardInterrupt):
         httpd.serve_forever()

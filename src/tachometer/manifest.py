@@ -88,6 +88,14 @@ def load_manifest(manifest_path: str | Path) -> RepoManifest:
         context="paths",
     )
 
+    notify = data.get("notify", {})
+    if not isinstance(notify, dict):
+        raise ValueError("[notify] must be a table when present")
+
+    def _opt_str(mapping: dict[str, Any], key: str) -> str | None:
+        value = mapping.get(key)
+        return str(value) if isinstance(value, str) and value.strip() else None
+
     return RepoManifest(
         name=_require_str(repo, "name", context="repo"),
         category=_require_str(repo, "category", context="repo"),
@@ -99,4 +107,8 @@ def load_manifest(manifest_path: str | Path) -> RepoManifest:
         host_profile_path=host_profile_path,
         host_summary_path=host_summary_path,
         default_label=str(defaults.get("label", "repo-snapshot")),
+        notify_shock_relay_root=_opt_str(notify, "shock_relay_root"),
+        notify_service=_opt_str(notify, "service"),
+        notify_target=_opt_str(notify, "target"),
+        notify_config_path=_opt_str(notify, "config_path"),
     )
