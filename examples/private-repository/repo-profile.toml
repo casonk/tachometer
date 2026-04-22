@@ -10,3 +10,11 @@ summary_path = ".tachometer/summary.json"
 
 [defaults]
 label = "repo-snapshot"
+
+# Optional: send a shock-relay alert when a metric first hits red.
+# Omit this section (or leave shock_relay_root unset) to disable notifications.
+# [notify]
+# shock_relay_root = "/path/to/shock-relay"  # absolute path to shock-relay checkout
+# service = "telegram"                        # telegram | signal | twilio | whatsapp
+# target = "YOUR_CHAT_ID"                     # chat_id / phone number for the chosen service
+# config_path = "/path/to/config.local.yaml"  # optional: override shock-relay config path
