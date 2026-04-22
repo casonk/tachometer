@@ -2,8 +2,12 @@
 
 ## Scope
 
-`clockwork` renders scheduler artifacts. It must never become a place to store
-live secrets, crontab exports with credentials, or host-specific private data.
+`tachometer` collects local profiling data and serves a lightweight dashboard.
+It must never become a place to store live secrets, host-specific private data,
+or broadly exposed control surfaces. Profiling summaries and dashboard output
+may reveal local repo state, resource usage, and operational timing, so the
+dashboard is intended to stay on `localhost` by default unless remote exposure
+is explicitly and intentionally enabled.
 
 ## Reporting
 
@@ -12,9 +16,11 @@ public issue with exploit details.
 
 ## Handling Rules
 
-- Keep secrets in external env files or secret stores, not in manifests.
-- Use generic paths and placeholder usernames in tracked examples unless an
-  exact path is required to explain the workflow.
-- Treat generated unit files and crontab snippets as reviewable text artifacts;
-  do not add hidden shell expansion or remote download behavior to install
-  flows.
+- Keep secrets, tokens, private keys, and personal data out of tracked profile
+  fixtures, screenshots, and issue reports.
+- Treat `.tachometer/` outputs as local-only operational data unless a tracked
+  fixture is deliberately sanitized for tests.
+- Do not expose the dashboard on a public network interface without an explicit
+  trust boundary and authentication plan.
+- Treat the `run-all` dashboard action as a privileged local operation; do not
+  describe it as a safe anonymous remote endpoint in documentation or examples.

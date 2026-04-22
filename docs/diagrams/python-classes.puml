@@ -8,16 +8,27 @@ class "RepoManifest" as tachometer.model.RepoManifest {
   host_summary_path : Path
   kind : str
   name : str
+  notify_config_path : str | None
+  notify_service : str | None
+  notify_shock_relay_root : str | None
+  notify_target : str | None
   profile_path : Path
   repo_root : Path
   summary_path : Path
   repo_metadata() -> dict[str, str]
 }
 class "ResourceSnapshot" as tachometer.model.ResourceSnapshot {
+  artefact_size_bytes : int | None
+  cpu_count : int | None
   cpu_percent : float | None
+  cpu_temp_celsius : float | None
+  dep_count : int | None
   disk_free_bytes : int | None
+  disk_io_read_bytes : int | None
+  disk_io_write_bytes : int | None
   disk_total_bytes : int | None
   disk_used_bytes : int | None
+  git_commit_count : int | None
   git_dirty_file_count : int | None
   git_non_ignored_size_bytes : int | None
   git_tracked_file_count : int | None
@@ -28,17 +39,24 @@ class "ResourceSnapshot" as tachometer.model.ResourceSnapshot {
   gpu_mem_used_mb : float | None
   gpu_name : str | None
   gpu_util_percent : float | None
+  hostname : str | None
   loadavg_15m : float | None
   loadavg_1m : float | None
   loadavg_5m : float | None
   memory_available_bytes : int | None
   memory_total_bytes : int | None
   memory_used_bytes : int | None
+  net_recv_bytes : int | None
+  net_sent_bytes : int | None
+  process_count : int | None
   repo_dir_count : int | None
   repo_file_count : int | None
   repo_root : str | None
   repo_size_bytes : int | None
+  swap_total_bytes : int | None
+  swap_used_bytes : int | None
   timestamp : float
+  uptime_seconds : float | None
 }
 class "_Handler" as tachometer.server._Handler {
   host_summary_path : Path

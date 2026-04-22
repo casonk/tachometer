@@ -16,6 +16,19 @@ from typing import Any
 
 # Human-readable suggestions keyed by the light name used in stoplight results.
 _SUGGESTIONS: dict[str, list[str]] = {
+    # system view — load average
+    "loadavg": [
+        "High sustained load; reduce background tasks or schedule CPU-heavy work during off-peak hours.",
+        "Or adjust the loadavg_ratio threshold.",
+    ],
+    "swap": [
+        "System is using swap; reduce memory pressure by closing unused processes or increasing RAM.",
+        "Or adjust the swap_utilization_ratio threshold.",
+    ],
+    "gpu_mem": [
+        "GPU VRAM is filling up; reduce batch sizes or free unused GPU tensors.",
+        "Or adjust the gpu_mem_utilization_ratio threshold.",
+    ],
     # system view
     "cpu": [
         "Reduce system-wide CPU load; schedule heavy tasks during off-peak hours.",
@@ -50,7 +63,43 @@ _SUGGESTIONS: dict[str, list[str]] = {
         "Reduce GPU utilisation during the profiled command.",
         "Or adjust the delta_gpu_util_percent threshold.",
     ],
+    "delta_disk_read": [
+        "Reduce file reads in the profiled command; consider caching or memoising expensive I/O.",
+        "Or adjust the delta_disk_io_read_bytes threshold.",
+    ],
+    "delta_disk_write": [
+        "Reduce file writes; avoid writing large temporary files or redundant build artefacts.",
+        "Or adjust the delta_disk_io_write_bytes threshold.",
+    ],
+    "delta_net_recv": [
+        "Reduce network downloads during the run; cache remote fixtures or mock external calls.",
+        "Or adjust the delta_net_recv_bytes threshold.",
+    ],
+    "delta_net_sent": [
+        "Reduce outbound network traffic during the run; mock external API calls in tests.",
+        "Or adjust the delta_net_sent_bytes threshold.",
+    ],
     # process view
+    "proc_threads": [
+        "Peak thread count is high; check for thread leaks or excessive parallelism.",
+        "Or adjust the proc_peak_thread_count threshold.",
+    ],
+    "proc_major_faults": [
+        "Many major page faults indicate memory pressure and disk-backed paging; reduce working set size.",
+        "Or adjust the proc_major_faults threshold.",
+    ],
+    "artefact_size": [
+        "Delete or .gitignore build artefacts (dist/, build/, *.egg-info/); run `python -m build` only when needed.",
+        "Or adjust the artefact_size_bytes threshold.",
+    ],
+    "proc_invol_ctx": [
+        "High involuntary context switches indicate CPU contention; reduce parallelism or competing processes.",
+        "Or adjust the proc_involuntary_ctx_switches threshold.",
+    ],
+    "proc_runtime": [
+        "Profile the command to find bottlenecks; consider parallelism or caching slow steps.",
+        "Or adjust the proc_avg_runtime_seconds threshold.",
+    ],
     "proc_avg_cpu": [
         "Profile and optimise CPU-intensive code paths in the command.",
         "Or adjust the proc_avg_cpu_percent threshold.",
@@ -97,14 +146,14 @@ def update_backlog(
     backlog_path: Path,
     view: str,
     stoplight_result: dict[str, Any],
-) -> list[dict[str, Any]]:
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     """Create, update, or auto-resolve backlog entries from a stoplight result.
 
     - Red light, entry absent or dismissed → create new open entry.
     - Red light, entry already open → bump occurrence_count + last_detected_at.
     - Non-red light, entry open → mark as auto-resolved.
 
-    Returns the updated backlog list.
+    Returns ``(updated_entries, newly_opened_entries)``.
     """
     entries = load_backlog(backlog_path)
     by_id: dict[str, dict[str, Any]] = {e["id"]: e for e in entries}
@@ -129,6 +178,7 @@ def update_backlog(
                     light_to_metric_value[light_key] = mv
                     break
 
+    newly_opened: list[dict[str, Any]] = []
     for light_key, light in lights.items():
         entry_id = _entry_id(view, light_key)
         value = light_to_metric_value.get(light_key)
@@ -141,7 +191,7 @@ def update_backlog(
                 if value is not None:
                     existing["value"] = value
             else:
-                by_id[entry_id] = {
+                new_entry: dict[str, Any] = {
                     "id": entry_id,
                     "view": view,
                     "light_key": light_key,
@@ -152,6 +202,8 @@ def update_backlog(
                     "status": "open",
                     "suggestions": _SUGGESTIONS.get(light_key, _FALLBACK_SUGGESTIONS),
                 }
+                by_id[entry_id] = new_entry
+                newly_opened.append(new_entry)
         elif light in ("green", "yellow"):
             existing = by_id.get(entry_id)
             if existing and existing.get("status") == "open":
@@ -160,7 +212,7 @@ def update_backlog(
 
     updated = list(by_id.values())
     save_backlog(backlog_path, updated)
-    return updated
+    return updated, newly_opened
 
 
 def open_items(backlog: list[dict[str, Any]]) -> list[dict[str, Any]]:

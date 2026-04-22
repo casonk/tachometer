@@ -60,6 +60,32 @@ def test_cli_host_snapshot_writes_host_profile_and_summary(tmp_path: Path, capsy
     assert output["repo_root"] is None
 
 
+def test_cli_agent_utilization_writes_sidecar(tmp_path: Path, monkeypatch, capsys):
+    manifest_path = _write_manifest(tmp_path)
+    monkeypatch.setattr(
+        "tachometer.cli.collect_agent_utilization",
+        lambda: {
+            "captured_at": 1.0,
+            "overall_light": "yellow",
+            "providers": {
+                "codex": {
+                    "display_name": "Codex",
+                    "summary": "P4% / S71%",
+                    "light": "yellow",
+                }
+            },
+        },
+    )
+
+    rc = main(["agent-utilization", "--manifest", str(manifest_path)])
+
+    assert rc == 0
+    assert (tmp_path / ".tachometer" / "agent-utilization.json").exists()
+    output = json.loads(capsys.readouterr().out)
+    assert output["overall_light"] == "yellow"
+    assert output["providers"]["codex"]["summary"] == "P4% / S71%"
+
+
 def test_cli_run_profiles_command(tmp_path: Path):
     manifest_path = _write_manifest(tmp_path, name="doseido", category="health-repos")
 
@@ -83,3 +109,50 @@ def test_cli_run_profiles_command(tmp_path: Path):
     assert len(profile["samples"]) == 2
     assert len(profile["runs"]) == 1
     assert summary["sample_count"] == 2
+
+
+def test_cli_serve_uses_loopback_host_by_default(tmp_path: Path, monkeypatch):
+    manifest_path = _write_manifest(tmp_path)
+    captured: dict[str, object] = {}
+
+    def fake_serve(repo_root, *, host, host_summary_path, port, allow_remote):
+        captured["repo_root"] = repo_root
+        captured["host"] = host
+        captured["host_summary_path"] = host_summary_path
+        captured["port"] = port
+        captured["allow_remote"] = allow_remote
+
+    monkeypatch.setattr("tachometer.server.serve", fake_serve)
+
+    rc = main(["serve", "--manifest", str(manifest_path)])
+
+    assert rc == 0
+    assert captured["host"] == "127.0.0.1"
+    assert captured["port"] == 5100
+    assert captured["allow_remote"] is False
+
+
+def test_cli_serve_allows_explicit_remote_bind(tmp_path: Path, monkeypatch):
+    manifest_path = _write_manifest(tmp_path)
+    captured: dict[str, object] = {}
+
+    def fake_serve(repo_root, *, host, host_summary_path, port, allow_remote):
+        captured["host"] = host
+        captured["allow_remote"] = allow_remote
+
+    monkeypatch.setattr("tachometer.server.serve", fake_serve)
+
+    rc = main(
+        [
+            "serve",
+            "--manifest",
+            str(manifest_path),
+            "--host",
+            "0.0.0.0",
+            "--allow-remote",
+        ]
+    )
+
+    assert rc == 0
+    assert captured["host"] == "0.0.0.0"
+    assert captured["allow_remote"] is True

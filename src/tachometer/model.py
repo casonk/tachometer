@@ -16,6 +16,10 @@ class RepoManifest:
     host_profile_path: Path
     host_summary_path: Path
     default_label: str = "repo-snapshot"
+    notify_shock_relay_root: str | None = None
+    notify_service: str | None = None
+    notify_target: str | None = None
+    notify_config_path: str | None = None
 
     def repo_metadata(self) -> dict[str, str]:
         return {
@@ -39,6 +43,13 @@ class ResourceSnapshot:
     disk_total_bytes: int | None = None
     disk_used_bytes: int | None = None
     disk_free_bytes: int | None = None
+    disk_io_read_bytes: int | None = None
+    disk_io_write_bytes: int | None = None
+    swap_total_bytes: int | None = None
+    swap_used_bytes: int | None = None
+    net_sent_bytes: int | None = None
+    net_recv_bytes: int | None = None
+    cpu_count: int | None = None
     gpu_detected: bool = False
     gpu_name: str | None = None
     gpu_util_percent: float | None = None
@@ -53,3 +64,10 @@ class ResourceSnapshot:
     git_untracked_file_count: int | None = None
     git_tracked_size_bytes: int | None = None
     git_non_ignored_size_bytes: int | None = None
+    git_commit_count: int | None = None
+    dep_count: int | None = None
+    artefact_size_bytes: int | None = None
+    uptime_seconds: float | None = None
+    hostname: str | None = None
+    process_count: int | None = None
+    cpu_temp_celsius: float | None = None

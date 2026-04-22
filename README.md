@@ -14,6 +14,8 @@ convention.
 
 - host resource snapshots: CPU, load average, memory, disk, and optional GPU
 - canonical host profile and summary artifacts for the dashboard banner
+- local AI-provider utilization snapshots for Claude, Codex, and Copilot when
+  their local CLI caches expose usage
 - optional Fedora-specific sidecar signals exported by `fedora-debugg`
 - repo snapshots: repo size, file and directory counts, and git tracked/dirty
   or untracked counts when git is available
@@ -70,10 +72,34 @@ Print the current canonical host summary:
 tachometer host-summarize --manifest config/tachometer/profile.toml
 ```
 
+Capture the local AI-provider utilization snapshot used by the dashboard:
+
+```bash
+tachometer agent-utilization --manifest config/tachometer/profile.toml
+```
+
+Serve the dashboard on loopback only:
+
+```bash
+tachometer serve --manifest config/tachometer/profile.toml --host 127.0.0.1 --port 5100
+```
+
+Non-loopback binds are blocked unless you pass `--allow-remote` explicitly.
+
 If `fedora-debugg` has exported `artifacts/latest/tachometer-signals.json`,
 the dashboard also renders a separate Fedora Debug strip with snapshot age plus
 bucketed Collection, Display, Coredumps, GPU, Storage, Packages, Python, Node,
 and Go signals.
+
+If `.tachometer/agent-utilization.json` exists, the dashboard also renders an
+AI Utilization strip sourced from local CLI state:
+
+- Claude: `~/.claude/stats-cache.json` plus `claude auth status --json`
+- Codex: the latest `.codex` session `token_count` event with rate-limit data
+- Copilot: the latest `.copilot/session-state/*/events.jsonl` shutdown record
+
+Copilot usage only appears after at least one session has started, and the
+current session totals land when that session shuts down.
 
 ## Manifest Shape
 

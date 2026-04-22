@@ -41,6 +41,12 @@ if ! PYTHONPATH="$tachometer_src" python3 -m tachometer.cli host-snapshot --mani
   ((failed++)) || true
 fi
 
+printf "==> host: agent utilization\n"
+if ! PYTHONPATH="$tachometer_src" python3 -m tachometer.cli agent-utilization --manifest "$manifest_path"; then
+  printf "FAILED agent utilization snapshot: %s\n" "$tachometer_root" >&2
+  ((failed++)) || true
+fi
+
 while IFS=$'\t' read -r repo_dir run_cmd no_run_reason; do
   runner="$repo_dir/scripts/run_tachometer_profile.sh"
   name="$(basename "$repo_dir")"

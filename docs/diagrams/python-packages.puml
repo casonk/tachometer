@@ -2,12 +2,14 @@
 set namespaceSeparator none
 top to bottom direction
 skinparam componentStyle rectangle
-rectangle "tachometer\n0 child pkg, 8 modules\n9 python files\nexamples: __main__, backlog, cli" as tachometer
+rectangle "tachometer\n0 child pkg, 10 modules\n11 python files\nexamples: __main__, agent_usage, backlog" as tachometer
 rectangle "tachometer.__main__\n1 python file" as tachometer.__main__
+rectangle "tachometer.agent_usage\n1 python file" as tachometer.agent_usage
 rectangle "tachometer.backlog\n1 python file" as tachometer.backlog
 rectangle "tachometer.cli\n1 python file" as tachometer.cli
 rectangle "tachometer.manifest\n1 python file" as tachometer.manifest
 rectangle "tachometer.model\n1 python file" as tachometer.model
+rectangle "tachometer.notify\n1 python file" as tachometer.notify
 rectangle "tachometer.profile\n1 python file" as tachometer.profile
 rectangle "tachometer.server\n1 python file" as tachometer.server
 rectangle "tachometer.stoplight\n1 python file" as tachometer.stoplight
@@ -15,8 +17,10 @@ tachometer --> tachometer.manifest
 tachometer --> tachometer.model
 tachometer --> tachometer.profile
 tachometer.__main__ --> tachometer.cli
+tachometer.cli --> tachometer.agent_usage
 tachometer.cli --> tachometer.backlog
 tachometer.cli --> tachometer.manifest
+tachometer.cli --> tachometer.notify
 tachometer.cli --> tachometer.profile
 tachometer.cli --> tachometer.server
 tachometer.cli --> tachometer.stoplight
