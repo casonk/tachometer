@@ -1151,6 +1151,9 @@ def _render_process_row(repo: dict[str, Any], next_run_ts: float = 0.0) -> str:
             f'<div style="font-size:0.78rem;color:{rate_color}">'
             f"{rate_pct}% ({success_count}/{run_count})</div>"
         )
+    last_run_suffix = ""
+    if last_run_at:
+        last_run_suffix = f"<br><span style='color:#94a3b8'>{_fmt_age(last_run_at)}</span>"
 
     return (
         f"<tr>"
@@ -1163,7 +1166,7 @@ def _render_process_row(repo: dict[str, Any], next_run_ts: float = 0.0) -> str:
         f"<td>{rt_gauge}</td>"
         f"<td>{extras_cell}</td>"
         f'<td style="color:#64748b;font-size:0.75rem">{qualifying} runs'
-        f"{"<br><span style='color:#94a3b8'>" + _fmt_age(last_run_at) + '</span>' if last_run_at else ''}"
+        f"{last_run_suffix}"
         f"</td>"
         f"<td>{_schedule_cell(repo, next_run_ts)}</td>"
         f"</tr>"
