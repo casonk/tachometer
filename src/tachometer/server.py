@@ -734,9 +734,7 @@ _METRIC_LABELS: dict[str, str] = {
 }
 
 
-def _compute_light_tally(
-    repos: list[dict[str, Any]], view: str
-) -> dict[str, dict[str, int]]:
+def _compute_light_tally(repos: list[dict[str, Any]], view: str) -> dict[str, dict[str, int]]:
     stoplight_key = f"stoplight_{view}"
     has_key = "has_data" if view == "system" else f"has_{view}"
     tally: dict[str, dict[str, int]] = {}
@@ -766,19 +764,19 @@ def _render_light_tally(tally: dict[str, dict[str, int]]) -> str:
         chips.append(
             f'<span style="padding:3px 8px;border:1px solid #e2e8f0;border-radius:999px;'
             f'font-size:0.72rem;color:#64748b;background:white;white-space:nowrap">'
-            f'{label}&nbsp;{"&thinsp;".join(parts)}</span>'
+            f"{label}&nbsp;{'&thinsp;'.join(parts)}</span>"
         )
     if not chips:
         return ""
     return (
         '<div style="display:flex;gap:5px;flex-wrap:wrap;margin:10px 0 6px;'
-        'padding:8px 12px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;'
+        "padding:8px 12px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;"
         'align-items:center">'
         '<span style="font-size:0.7rem;color:#94a3b8;margin-right:4px;white-space:nowrap">'
-        "Lights:</span>"
-        + "".join(chips)
-        + "</div>"
+        "Lights:</span>" + "".join(chips) + "</div>"
     )
+
+
 _VIEW_DESCRIPTIONS = {
     "system": "System-wide snapshots — CPU/mem/GPU from /proc &amp; nvidia-smi, averaged across all samples",
     "delta": "Resource change during <code>run</code> subcommand — how much the system shifted pre→post",
@@ -1142,7 +1140,7 @@ def _render_process_row(repo: dict[str, Any], next_run_ts: float = 0.0) -> str:
         extras_cell += (
             f'<div style="font-size:0.65rem;color:#94a3b8;margin-top:6px">last fail</div>'
             f'<div style="font-size:0.78rem;color:{fail_color}">'
-            f'{_fmt_age(last_failed_at)} ({fail_label})</div>'
+            f"{_fmt_age(last_failed_at)} ({fail_label})</div>"
         )
     success_count = run_count - fail_count
     if run_count:
@@ -1151,7 +1149,7 @@ def _render_process_row(repo: dict[str, Any], next_run_ts: float = 0.0) -> str:
         extras_cell += (
             f'<div style="font-size:0.65rem;color:#94a3b8;margin-top:4px">success rate</div>'
             f'<div style="font-size:0.78rem;color:{rate_color}">'
-            f'{rate_pct}% ({success_count}/{run_count})</div>'
+            f"{rate_pct}% ({success_count}/{run_count})</div>"
         )
 
     return (
@@ -1165,7 +1163,7 @@ def _render_process_row(repo: dict[str, Any], next_run_ts: float = 0.0) -> str:
         f"<td>{rt_gauge}</td>"
         f"<td>{extras_cell}</td>"
         f'<td style="color:#64748b;font-size:0.75rem">{qualifying} runs'
-        f'{"<br><span style=\'color:#94a3b8\'>" + _fmt_age(last_run_at) + "</span>" if last_run_at else ""}'
+        f"{"<br><span style='color:#94a3b8'>" + _fmt_age(last_run_at) + '</span>' if last_run_at else ''}"
         f"</td>"
         f"<td>{_schedule_cell(repo, next_run_ts)}</td>"
         f"</tr>"

@@ -604,9 +604,7 @@ def summarize_run_records(profile_path: str | Path) -> dict[str, Any]:
 
     # Failure stats across all runs (not just qualifying).
     fail_count = sum(1 for r in runs if r.get("returncode", 0) != 0)
-    last_failed = next(
-        (r for r in reversed(runs) if r.get("returncode", 0) != 0), None
-    )
+    last_failed = next((r for r in reversed(runs) if r.get("returncode", 0) != 0), None)
     last_run = runs[-1] if runs else None
 
     return {
