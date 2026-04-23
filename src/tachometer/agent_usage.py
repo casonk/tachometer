@@ -88,7 +88,9 @@ def _collect_claude(home: Path) -> dict[str, Any]:
 
     latest_daily = _latest_by_date(list(stats.get("dailyModelTokens", [])))
     latest_day = latest_daily.get("date")
-    tokens_by_model = latest_daily.get("tokensByModel", {}) if isinstance(latest_daily, dict) else {}
+    tokens_by_model = (
+        latest_daily.get("tokensByModel", {}) if isinstance(latest_daily, dict) else {}
+    )
     latest_total_tokens = sum(
         int(value) for value in tokens_by_model.values() if isinstance(value, int | float)
     )
@@ -137,7 +139,9 @@ def _collect_claude(home: Path) -> dict[str, Any]:
             "last_computed_date": stats.get("lastComputedDate"),
             "latest_day": latest_day,
             "latest_daily_tokens_total": latest_total_tokens or None,
-            "latest_daily_tokens_by_model": tokens_by_model if isinstance(tokens_by_model, dict) else {},
+            "latest_daily_tokens_by_model": (
+                tokens_by_model if isinstance(tokens_by_model, dict) else {}
+            ),
             "top_model": top_model,
             "top_model_tokens": top_model_tokens,
             "total_sessions": stats.get("totalSessions"),
@@ -229,9 +233,9 @@ def _collect_codex(home: Path) -> dict[str, Any]:
         "details": {
             "model": model,
             "plan_type": rate_limits.get("plan_type"),
-            "event_timestamp": last_token_count.get("timestamp")
-            if isinstance(last_token_count, dict)
-            else None,
+            "event_timestamp": (
+                last_token_count.get("timestamp") if isinstance(last_token_count, dict) else None
+            ),
             "total_token_usage": total_usage,
             "last_token_usage": last_usage,
             "rate_limits": rate_limits,
@@ -330,9 +334,9 @@ def _collect_copilot(home: Path) -> dict[str, Any]:
         "summary": summary,
         "notes": notes,
         "details": {
-            "event_timestamp": latest_shutdown.get("timestamp")
-            if isinstance(latest_shutdown, dict)
-            else None,
+            "event_timestamp": (
+                latest_shutdown.get("timestamp") if isinstance(latest_shutdown, dict) else None
+            ),
             "current_model": shutdown_data.get("currentModel"),
             "total_premium_requests": premium_requests,
             "total_api_duration_ms": shutdown_data.get("totalApiDurationMs"),
