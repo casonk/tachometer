@@ -169,7 +169,7 @@ def _gpu_snapshot() -> dict[str, Any]:
         proc = subprocess.run(
             [
                 "nvidia-smi",
-                "--query-gpu=name,utilization.gpu,memory.used,memory.total",
+                "--query-gpu=name,utilization.gpu,memory.used,memory.total,temperature.gpu",
                 "--format=csv,noheader,nounits",
             ],
             capture_output=True,
@@ -179,14 +179,17 @@ def _gpu_snapshot() -> dict[str, Any]:
         if proc.returncode != 0 or not proc.stdout.strip():
             return {"gpu_detected": True}
         first = proc.stdout.strip().splitlines()[0]
-        name, util, mem_used, mem_total = [value.strip() for value in first.split(",", 3)]
-        return {
+        name, util, mem_used, mem_total, temp = [value.strip() for value in first.split(",", 4)]
+        result: dict[str, Any] = {
             "gpu_detected": True,
             "gpu_name": name,
             "gpu_util_percent": float(util),
             "gpu_mem_used_mb": float(mem_used),
             "gpu_mem_total_mb": float(mem_total),
         }
+        with contextlib.suppress(ValueError):
+            result["gpu_temp_celsius"] = float(temp)
+        return result
     except Exception:
         return {"gpu_detected": True}
 
@@ -479,6 +482,7 @@ def summarize_samples(profile_path: str | Path) -> dict[str, Any]:
         "avg_disk_used_bytes": _avg(samples, "disk_used_bytes"),
         "avg_gpu_util_percent": _avg(samples, "gpu_util_percent"),
         "avg_gpu_mem_used_mb": _avg(samples, "gpu_mem_used_mb"),
+        "avg_gpu_temp_celsius": _avg(samples, "gpu_temp_celsius"),
         "avg_repo_size_bytes": _avg(samples, "repo_size_bytes"),
         "max_cpu_percent": _max(samples, "cpu_percent"),
         "max_gpu_util_percent": _max(samples, "gpu_util_percent"),
