@@ -436,6 +436,7 @@ def _render_host_banner(host: dict[str, Any]) -> str:
     uptime = summary.get("latest_uptime_seconds")
     procs = summary.get("latest_process_count")
     temp = summary.get("latest_cpu_temp_celsius")
+    gpu_temp = summary.get("avg_gpu_temp_celsius")
 
     chips = [
         _banner_metric(
@@ -467,7 +468,9 @@ def _render_host_banner(host: dict[str, Any]) -> str:
         _banner_metric("Procs", f"{int(procs):,}" if procs is not None else "—", "unknown"),
     ]
     if temp is not None:
-        chips.append(_banner_metric("Temp", f"{temp:.0f}°C", "unknown"))
+        chips.append(_banner_metric("CPU°C", f"{temp:.0f}°C", "unknown"))
+    if gpu_temp is not None:
+        chips.append(_banner_metric("GPU°C", f"{gpu_temp:.0f}°C", "unknown"))
 
     return (
         '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">'

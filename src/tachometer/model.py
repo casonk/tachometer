@@ -55,6 +55,7 @@ class ResourceSnapshot:
     gpu_util_percent: float | None = None
     gpu_mem_used_mb: float | None = None
     gpu_mem_total_mb: float | None = None
+    gpu_temp_celsius: float | None = None
     repo_root: str | None = None
     repo_file_count: int | None = None
     repo_dir_count: int | None = None
