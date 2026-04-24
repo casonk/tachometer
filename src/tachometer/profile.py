@@ -80,6 +80,21 @@ def _read_cpu_temp() -> float | None:
     return None
 
 
+def _read_fan_rpm_max() -> int | None:
+    hwmon = Path("/sys/class/hwmon")
+    if not hwmon.exists():
+        return None
+    max_rpm: int | None = None
+    with contextlib.suppress(Exception):
+        for zone in hwmon.iterdir():
+            for fan_file in zone.glob("fan*_input"):
+                with contextlib.suppress(Exception):
+                    rpm = int(fan_file.read_text(encoding="utf-8").strip())
+                    if max_rpm is None or rpm > max_rpm:
+                        max_rpm = rpm
+    return max_rpm
+
+
 def _read_rapl_energy_uj() -> int | None:
     try:
         return int(_RAPL_ENERGY_PATH.read_text(encoding="utf-8").strip())
@@ -169,7 +184,7 @@ def _gpu_snapshot() -> dict[str, Any]:
         proc = subprocess.run(
             [
                 "nvidia-smi",
-                "--query-gpu=name,utilization.gpu,memory.used,memory.total,temperature.gpu",
+                "--query-gpu=name,utilization.gpu,memory.used,memory.total,temperature.gpu,fan.speed",
                 "--format=csv,noheader,nounits",
             ],
             capture_output=True,
@@ -179,7 +194,9 @@ def _gpu_snapshot() -> dict[str, Any]:
         if proc.returncode != 0 or not proc.stdout.strip():
             return {"gpu_detected": True}
         first = proc.stdout.strip().splitlines()[0]
-        name, util, mem_used, mem_total, temp = [value.strip() for value in first.split(",", 4)]
+        name, util, mem_used, mem_total, temp, fan = [
+            value.strip() for value in first.split(",", 5)
+        ]
         result: dict[str, Any] = {
             "gpu_detected": True,
             "gpu_name": name,
@@ -189,6 +206,8 @@ def _gpu_snapshot() -> dict[str, Any]:
         }
         with contextlib.suppress(ValueError):
             result["gpu_temp_celsius"] = float(temp)
+        with contextlib.suppress(ValueError):
+            result["gpu_fan_pct"] = float(fan)
         return result
     except Exception:
         return {"gpu_detected": True}
@@ -391,6 +410,7 @@ def collect_resource_snapshot(
     base["uptime_seconds"] = _read_uptime()
     base["process_count"] = _read_process_count()
     base["cpu_temp_celsius"] = _read_cpu_temp()
+    base["fan_rpm_max"] = _read_fan_rpm_max()
     with contextlib.suppress(Exception):
         base["hostname"] = socket.gethostname()
     return ResourceSnapshot(**base)
@@ -483,6 +503,8 @@ def summarize_samples(profile_path: str | Path) -> dict[str, Any]:
         "avg_gpu_util_percent": _avg(samples, "gpu_util_percent"),
         "avg_gpu_mem_used_mb": _avg(samples, "gpu_mem_used_mb"),
         "avg_gpu_temp_celsius": _avg(samples, "gpu_temp_celsius"),
+        "avg_gpu_fan_pct": _avg(samples, "gpu_fan_pct"),
+        "avg_fan_rpm_max": _avg(samples, "fan_rpm_max"),
         "avg_repo_size_bytes": _avg(samples, "repo_size_bytes"),
         "max_cpu_percent": _max(samples, "cpu_percent"),
         "max_gpu_util_percent": _max(samples, "gpu_util_percent"),
