@@ -25,7 +25,7 @@ def test_gpu_snapshot_returns_gpu_detected_false_when_nvidia_smi_missing():
 
 
 def test_gpu_snapshot_parses_valid_csv():
-    csv_output = "NVIDIA GeForce RTX 3080, 45, 8192, 10240, 72\n"
+    csv_output = "NVIDIA GeForce RTX 3080, 45, 8192, 10240, 72, 35\n"
     completed = type("Completed", (), {"returncode": 0, "stdout": csv_output})
 
     with (
@@ -40,6 +40,7 @@ def test_gpu_snapshot_parses_valid_csv():
     assert result["gpu_mem_used_mb"] == 8192.0
     assert result["gpu_mem_total_mb"] == 10240.0
     assert result["gpu_temp_celsius"] == 72.0
+    assert result["gpu_fan_pct"] == 35.0
 
 
 def test_collect_resource_snapshot_includes_repo_metrics_for_git_repo(tmp_path: Path):

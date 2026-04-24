@@ -437,6 +437,8 @@ def _render_host_banner(host: dict[str, Any]) -> str:
     procs = summary.get("latest_process_count")
     temp = summary.get("latest_cpu_temp_celsius")
     gpu_temp = summary.get("avg_gpu_temp_celsius")
+    gpu_fan = summary.get("avg_gpu_fan_pct")
+    fan_rpm = summary.get("avg_fan_rpm_max")
 
     chips = [
         _banner_metric(
@@ -471,6 +473,10 @@ def _render_host_banner(host: dict[str, Any]) -> str:
         chips.append(_banner_metric("CPU°C", f"{temp:.0f}°C", "unknown"))
     if gpu_temp is not None:
         chips.append(_banner_metric("GPU°C", f"{gpu_temp:.0f}°C", "unknown"))
+    if gpu_fan is not None:
+        chips.append(_banner_metric("GPU Fan", f"{gpu_fan:.0f}%", "unknown"))
+    if fan_rpm is not None:
+        chips.append(_banner_metric("Fan", f"{int(fan_rpm):,} RPM", "unknown"))
 
     return (
         '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">'
