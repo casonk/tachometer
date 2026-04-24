@@ -33,7 +33,9 @@ except ModuleNotFoundError:  # pragma: no cover - python < 3.11
     import tomli as tomllib  # type: ignore[no-redef]
 
 from .backlog import load_backlog, open_items
-from .profile import summarize_delta_pairs, summarize_run_records
+from dataclasses import asdict
+
+from .profile import collect_host_resource_snapshot, summarize_delta_pairs, summarize_run_records
 from .stoplight import (
     DEFAULT_THRESHOLDS,
     DELTA_THRESHOLDS,
@@ -1240,6 +1242,133 @@ def _run_button(view: str = "system") -> str:
     )
 
 
+def _build_live_payload(disk_path: str | None = None) -> dict[str, Any]:
+    snap = collect_host_resource_snapshot(path=disk_path or "/")
+    d = asdict(snap)
+    # Derived ratios for easy JS consumption
+    if d.get("memory_used_bytes") and d.get("memory_total_bytes"):
+        d["memory_pct"] = d["memory_used_bytes"] / d["memory_total_bytes"] * 100
+    if d.get("disk_used_bytes") and d.get("disk_total_bytes"):
+        d["disk_pct"] = d["disk_used_bytes"] / d["disk_total_bytes"] * 100
+    if d.get("swap_used_bytes") and d.get("swap_total_bytes"):
+        d["swap_pct"] = d["swap_used_bytes"] / d["swap_total_bytes"] * 100
+    if d.get("gpu_mem_used_mb") and d.get("gpu_mem_total_mb"):
+        d["gpu_mem_pct"] = d["gpu_mem_used_mb"] / d["gpu_mem_total_mb"] * 100
+    cpu_count = d.get("cpu_count") or 1
+    if d.get("loadavg_1m") is not None:
+        d["loadavg_ratio_pct"] = d["loadavg_1m"] / cpu_count * 100
+    return d
+
+
+_LIVE_PANEL_HTML = """\
+<div id="live-panel" style="margin:10px 0 6px;padding:10px 14px;background:#f0f9ff;
+  border:1px solid #bae6fd;border-radius:8px">
+  <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:8px">
+    <span id="live-dot" style="width:8px;height:8px;border-radius:50%;background:#22c55e;
+      display:inline-block;flex-shrink:0"></span>
+    <strong style="font-size:0.8rem;color:#0369a1">Live System</strong>
+    <select id="live-interval-select"
+      onchange="window._tachLive.setInterval(this.value)"
+      style="font-size:0.75rem;padding:2px 6px;border:1px solid #bae6fd;
+        border-radius:4px;background:white;color:#475569">
+      <option value="5">5 s</option>
+      <option value="10">10 s</option>
+      <option value="30">30 s</option>
+      <option value="60" selected>60 s</option>
+      <option value="120">2 m</option>
+      <option value="300">5 m</option>
+      <option value="0">Off</option>
+    </select>
+    <span id="live-age" style="font-size:0.7rem;color:#94a3b8">—</span>
+  </div>
+  <div id="live-metrics" style="font-size:0.78rem;color:#475569;
+    display:flex;gap:6px 16px;flex-wrap:wrap;align-items:baseline">
+    <span style="color:#94a3b8">Awaiting first poll…</span>
+  </div>
+</div>
+<script>
+(function() {
+  var _timer = null, _ageTimer = null, _lastMs = null;
+
+  function _c(pct, g, y) {
+    return pct == null ? '#94a3b8' : pct <= g ? '#22c55e' : pct <= y ? '#eab308' : '#ef4444';
+  }
+  function _bar(pct, g, y) {
+    if (pct == null) return '';
+    var clamped = Math.min(100, Math.max(0, pct));
+    return '<span style="display:inline-block;width:52px;height:5px;background:#e2e8f0;' +
+      'border-radius:3px;vertical-align:middle;margin:0 3px">' +
+      '<span style="display:block;width:' + clamped + '%;height:100%;background:' +
+      _c(pct, g, y) + ';border-radius:3px"></span></span>';
+  }
+  function _m(label, val, bar) {
+    return '<span style="white-space:nowrap">' + label + '&thinsp;' +
+      (bar || '') + '<strong>' + val + '</strong></span>';
+  }
+  function _pct(v) { return v == null ? '—' : v.toFixed(1) + '%'; }
+  function _uptime(s) {
+    if (s == null) return '—';
+    s = Math.floor(s);
+    var d = Math.floor(s / 86400), h = Math.floor((s % 86400) / 3600), m = Math.floor((s % 3600) / 60);
+    return d ? d + 'd ' + h + 'h' : h ? h + 'h ' + m + 'm' : m + 'm';
+  }
+
+  function render(d) {
+    var parts = [];
+    var cpu = d.cpu_percent;
+    parts.push(_m('CPU', _pct(cpu), _bar(cpu, 60, 85)));
+    var load = d.loadavg_ratio_pct;
+    parts.push(_m('Load', _pct(load), _bar(load, 70, 90)));
+    var mem = d.memory_pct;
+    parts.push(_m('Mem', _pct(mem), _bar(mem, 70, 85)));
+    var swp = d.swap_pct;
+    if (swp != null && swp > 0) parts.push(_m('Swap', _pct(swp), _bar(swp, 10, 40)));
+    var dsk = d.disk_pct;
+    parts.push(_m('Disk', _pct(dsk), _bar(dsk, 75, 90)));
+    if (d.gpu_detected) {
+      parts.push(_m('GPU', _pct(d.gpu_util_percent), _bar(d.gpu_util_percent, 50, 80)));
+      parts.push(_m('VRAM', _pct(d.gpu_mem_pct), _bar(d.gpu_mem_pct, 70, 90)));
+      if (d.gpu_temp_celsius != null) parts.push(_m('GPU°C', d.gpu_temp_celsius.toFixed(0) + '°', null));
+      if (d.gpu_fan_pct != null) parts.push(_m('GPU Fan', d.gpu_fan_pct.toFixed(0) + '%', null));
+    }
+    if (d.cpu_temp_celsius != null) parts.push(_m('CPU°C', d.cpu_temp_celsius.toFixed(0) + '°', null));
+    if (d.fan_rpm_max != null) parts.push(_m('Fan', d.fan_rpm_max.toLocaleString() + ' RPM', null));
+    parts.push(_m('Procs', d.process_count != null ? d.process_count.toLocaleString() : '—', null));
+    parts.push(_m('Up', _uptime(d.uptime_seconds), null));
+    document.getElementById('live-metrics').innerHTML = parts.join(
+      '<span style="color:#e2e8f0;margin:0 2px">|</span>');
+  }
+
+  function poll() {
+    fetch('/api/live')
+      .then(function(r) { return r.json(); })
+      .then(function(d) { _lastMs = Date.now(); render(d); })
+      .catch(function() {});
+  }
+
+  window._tachLive = {
+    setInterval: function(secs) {
+      if (_timer) clearInterval(_timer);
+      var n = parseInt(secs, 10);
+      document.getElementById('live-interval-select').value = secs;
+      if (n > 0) { poll(); _timer = setInterval(poll, n * 1000); }
+    }
+  };
+
+  // Age counter
+  _ageTimer = setInterval(function() {
+    var el = document.getElementById('live-age');
+    if (!el || !_lastMs) return;
+    var s = Math.round((Date.now() - _lastMs) / 1000);
+    el.textContent = s < 3 ? 'just now' : s + 's ago';
+  }, 1000);
+
+  // Kick off at 60 s
+  window._tachLive.setInterval(60);
+})();
+</script>"""
+
+
 def _render_dashboard(
     repos: list[dict[str, Any]],
     host: dict[str, Any],
@@ -1267,6 +1396,7 @@ def _render_dashboard(
     agent_utilization_banner = _render_agent_utilization_banner(agent_utilization)
     fedora_debug_banner = _render_fedora_debug_banner(fedora_debug)
     tally_html = _render_light_tally(_compute_light_tally(repos, view))
+    live_panel = _LIVE_PANEL_HTML
 
     # Dynamic gauge scale — largest total repo size = 100% bar width.
     max_repo_bytes = (
@@ -1381,6 +1511,7 @@ def _render_dashboard(
     </div>
   </div>
 </div>
+{live_panel}
 {tally_html}
 <table>
 <thead>
@@ -1478,6 +1609,16 @@ class _Handler(BaseHTTPRequestHandler):
         parsed = urlparse(self.path)
         qs = parse_qs(parsed.query)
         view = qs.get("view", ["system"])[0]
+
+        if parsed.path == "/api/live":
+            self._send(
+                json.dumps(
+                    _build_live_payload(str(self.__class__.tachometer_root)),
+                    indent=2,
+                ),
+                "application/json",
+            )
+            return
 
         repos = gather_repo_data(self.__class__.tachometer_root)
         host = gather_host_data(self.__class__.host_summary_path)
