@@ -1,0 +1,7 @@
+[retention]
+# How long to keep individual snapshot samples (days).
+sample_days = 365
+# How long to keep profiled-run records (days).
+run_days = 365
+# How long to keep auto-resolved backlog entries before pruning them (days).
+backlog_resolved_days = 365

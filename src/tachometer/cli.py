@@ -6,19 +6,21 @@ from collections.abc import Sequence
 from dataclasses import asdict
 
 from .agent_usage import collect_agent_utilization
-from .backlog import update_backlog
+from .backlog import prune_resolved_backlog, update_backlog
 from .manifest import load_manifest
 from .notify import notify_new_red_lights
 from .profile import (
     append_profile_sample,
     collect_host_resource_snapshot,
     collect_repo_resource_snapshot,
+    prune_profile_by_age,
     run_profiled_command,
     summarize_delta_pairs,
     summarize_run_records,
     summarize_samples,
     write_summary,
 )
+from .settings import load_settings, retention, settings_path
 from .stoplight import evaluate as stoplight_evaluate
 from .stoplight import evaluate_delta, evaluate_host, evaluate_process
 
@@ -42,6 +44,8 @@ def _maybe_notify(manifest, newly_opened: list) -> None:
 
 def _snapshot(args: argparse.Namespace) -> int:
     manifest = load_manifest(args.manifest)
+    s = settings_path(args.manifest)
+    ret = retention(load_settings(s))
     label = args.label or manifest.default_label
     snapshot = collect_repo_resource_snapshot(
         path=manifest.disk_path,
@@ -53,10 +57,16 @@ def _snapshot(args: argparse.Namespace) -> int:
         payload,
         repo_metadata=manifest.repo_metadata(),
     )
+    prune_profile_by_age(
+        manifest.profile_path,
+        sample_days=ret["sample_days"],
+        run_days=ret["run_days"],
+    )
     summary = summarize_samples(manifest.profile_path)
     write_summary(manifest.summary_path, summary)
     backlog_path = manifest.profile_path.parent / "backlog.json"
     _, newly_opened = update_backlog(backlog_path, "system", stoplight_evaluate(summary))
+    prune_resolved_backlog(backlog_path, resolved_days=ret["backlog_resolved_days"])
     _maybe_notify(manifest, newly_opened)
     print(json.dumps(payload, indent=2))
     return 0
@@ -64,14 +74,22 @@ def _snapshot(args: argparse.Namespace) -> int:
 
 def _host_snapshot(args: argparse.Namespace) -> int:
     manifest = load_manifest(args.manifest)
+    s = settings_path(args.manifest)
+    ret = retention(load_settings(s))
     label = args.label or "host-snapshot"
     snapshot = collect_host_resource_snapshot(path=manifest.disk_path)
     payload = {"name": label, "phase": args.phase, **asdict(snapshot)}
     append_profile_sample(manifest.host_profile_path, payload)
+    prune_profile_by_age(
+        manifest.host_profile_path,
+        sample_days=ret["sample_days"],
+        run_days=ret["run_days"],
+    )
     summary = summarize_samples(manifest.host_profile_path)
     write_summary(manifest.host_summary_path, summary)
     host_backlog_path = manifest.host_profile_path.parent / "host-backlog.json"
     _, newly_opened = update_backlog(host_backlog_path, "host", evaluate_host(summary))
+    prune_resolved_backlog(host_backlog_path, resolved_days=ret["backlog_resolved_days"])
     _maybe_notify(manifest, newly_opened)
     print(json.dumps(payload, indent=2))
     return 0
@@ -114,6 +132,14 @@ def _run(args: argparse.Namespace) -> int:
     run_summary = summarize_run_records(manifest.profile_path)
     if run_summary.get("qualifying_run_count", 0) > 0:
         _, run_new = update_backlog(backlog_path, "process", evaluate_process(run_summary))
+    s = settings_path(args.manifest)
+    ret = retention(load_settings(s))
+    prune_profile_by_age(
+        manifest.profile_path,
+        sample_days=ret["sample_days"],
+        run_days=ret["run_days"],
+    )
+    prune_resolved_backlog(backlog_path, resolved_days=ret["backlog_resolved_days"])
     _maybe_notify(manifest, sys_new + delta_new + run_new)
     print(json.dumps(record, indent=2))
     return int(record["returncode"])

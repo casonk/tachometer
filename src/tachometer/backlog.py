@@ -218,3 +218,20 @@ def update_backlog(
 def open_items(backlog: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Return only the entries that are currently open."""
     return [e for e in backlog if e.get("status") == "open"]
+
+
+def prune_resolved_backlog(backlog_path: Path, *, resolved_days: int = 365) -> None:
+    """Remove auto-resolved entries whose resolved_at is older than resolved_days."""
+    entries = load_backlog(backlog_path)
+    if not entries:
+        return
+    cutoff = time.strftime(
+        "%Y-%m-%dT%H:%M:%S",
+        time.localtime(time.time() - resolved_days * 86400),
+    )
+    pruned = [
+        e for e in entries
+        if e.get("status") != "auto-resolved" or (e.get("resolved_at", "") >= cutoff)
+    ]
+    if len(pruned) != len(entries):
+        save_backlog(backlog_path, pruned)
