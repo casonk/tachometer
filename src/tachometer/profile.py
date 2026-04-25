@@ -465,6 +465,34 @@ def append_run_record(
     profile_path.write_text(json.dumps(data, indent=2), encoding="utf-8")
 
 
+def prune_profile_by_age(
+    profile_path: str | Path,
+    *,
+    sample_days: int = 365,
+    run_days: int = 365,
+) -> None:
+    """Remove samples and run records older than the given thresholds and rewrite."""
+    profile_path = Path(profile_path)
+    if not profile_path.exists():
+        return
+    data = _load_profile_document(profile_path)
+    cutoff_samples = time.time() - sample_days * 86400
+    cutoff_runs = time.time() - run_days * 86400
+
+    before_s = len(data["samples"])
+    data["samples"] = [
+        s for s in data["samples"]
+        if (s.get("timestamp") or 0) >= cutoff_samples
+    ]
+    before_r = len(data["runs"])
+    data["runs"] = [
+        r for r in data["runs"]
+        if (r.get("started_at") or r.get("timestamp") or 0) >= cutoff_runs
+    ]
+    if len(data["samples"]) != before_s or len(data["runs"]) != before_r:
+        profile_path.write_text(json.dumps(data, indent=2), encoding="utf-8")
+
+
 def _avg(samples: list[dict[str, Any]], key: str) -> float | None:
     values = [sample.get(key) for sample in samples if isinstance(sample.get(key), int | float)]
     return round(sum(values) / len(values), 3) if values else None

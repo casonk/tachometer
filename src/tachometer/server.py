@@ -34,6 +34,7 @@ except ModuleNotFoundError:  # pragma: no cover - python < 3.11
 
 from .backlog import load_backlog, open_items
 from dataclasses import asdict
+from .settings import load_settings, save_settings
 
 from .profile import collect_host_resource_snapshot, summarize_delta_pairs, summarize_run_records
 from .stoplight import (
@@ -1369,6 +1370,97 @@ _LIVE_PANEL_HTML = """\
 </script>"""
 
 
+def _settings_path(tachometer_root: Path) -> Path:
+    return tachometer_root / "config" / "tachometer" / "settings.toml"
+
+
+def _render_admin_page(tachometer_root: Path, saved: bool = False) -> str:
+    s_path = _settings_path(tachometer_root)
+    cfg = load_settings(s_path)
+    ret = cfg.get("retention", {})
+    sample_days = int(ret.get("sample_days", 365))
+    run_days = int(ret.get("run_days", 365))
+    backlog_days = int(ret.get("backlog_resolved_days", 365))
+    saved_banner = (
+        '<div style="background:#dcfce7;border:1px solid #86efac;border-radius:6px;'
+        'padding:8px 14px;margin-bottom:16px;color:#166534;font-size:0.82rem">'
+        "&#10003; Settings saved successfully.</div>"
+        if saved
+        else ""
+    )
+    return f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Tachometer — Admin</title>
+<style>
+  *{{box-sizing:border-box;margin:0;padding:0}}
+  body{{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+        background:#f8fafc;color:#1e293b;padding:24px;font-size:14px;max-width:640px}}
+  h1{{font-size:1.3rem;font-weight:700;margin-bottom:4px}}
+  .sub{{color:#64748b;font-size:0.8rem;margin-bottom:20px}}
+  .card{{background:white;border:1px solid #e2e8f0;border-radius:10px;
+         padding:20px 24px;box-shadow:0 1px 3px rgba(0,0,0,.06)}}
+  h2{{font-size:0.9rem;font-weight:700;text-transform:uppercase;letter-spacing:.05em;
+      color:#475569;margin-bottom:14px}}
+  .field{{margin-bottom:16px}}
+  label{{display:block;font-size:0.82rem;font-weight:600;color:#374151;margin-bottom:4px}}
+  .hint{{font-size:0.72rem;color:#94a3b8;margin-top:3px}}
+  input[type=number]{{width:120px;padding:6px 10px;border:1px solid #cbd5e1;
+    border-radius:6px;font-size:0.85rem;color:#1e293b}}
+  input[type=number]:focus{{outline:2px solid #3b82f6;border-color:#3b82f6}}
+  .actions{{display:flex;gap:10px;align-items:center;margin-top:20px}}
+  button{{padding:8px 18px;background:#1e293b;color:#e2e8f0;border:none;
+          border-radius:6px;font-size:0.82rem;font-weight:600;cursor:pointer}}
+  button:hover{{background:#334155}}
+  a.back{{color:#64748b;font-size:0.8rem;text-decoration:none}}
+  a.back:hover{{color:#1e293b}}
+  code{{background:#f1f5f9;padding:1px 5px;border-radius:3px;font-size:0.75rem}}
+</style>
+</head>
+<body>
+<h1>&#9881;&#65039; Tachometer Admin</h1>
+<div class="sub"><a class="back" href="/">&#8592; Back to dashboard</a></div>
+{saved_banner}
+<div class="card">
+  <h2>Data Retention</h2>
+  <p style="font-size:0.78rem;color:#64748b;margin-bottom:16px">
+    Controls how long historical data is kept in <code>.tachometer/</code> directories.
+    Settings are stored in <code>config/tachometer/settings.toml</code>.
+  </p>
+  <form method="POST" action="/admin/settings">
+    <div class="field">
+      <label for="sample_days">Snapshot sample retention (days)</label>
+      <input type="number" id="sample_days" name="sample_days" min="1" max="3650"
+             value="{sample_days}">
+      <div class="hint">How long to keep individual snapshot samples in profile.json.</div>
+    </div>
+    <div class="field">
+      <label for="run_days">Run record retention (days)</label>
+      <input type="number" id="run_days" name="run_days" min="1" max="3650"
+             value="{run_days}">
+      <div class="hint">How long to keep profiled-run records (pre/post pairs and psutil data).</div>
+    </div>
+    <div class="field">
+      <label for="backlog_resolved_days">Resolved backlog entry retention (days)</label>
+      <input type="number" id="backlog_resolved_days" name="backlog_resolved_days"
+             min="1" max="3650" value="{backlog_days}">
+      <div class="hint">How long to keep auto-resolved backlog items before they are pruned.</div>
+    </div>
+    <div class="actions">
+      <button type="submit">Save Settings</button>
+      <a class="back" href="/">Cancel</a>
+    </div>
+  </form>
+</div>
+<div style="margin-top:12px;font-size:0.7rem;color:#94a3b8">
+  Settings file: {s_path}
+</div>
+</body>
+</html>"""
+
+
 def _render_dashboard(
     repos: list[dict[str, Any]],
     host: dict[str, Any],
@@ -1488,7 +1580,8 @@ def _render_dashboard(
 <h1>&#127950; Tachometer</h1>
 <div class="sub">
   Portfolio resource monitor &middot; auto-refreshes every 60 s &middot;
-  <a href="/api/status">JSON API</a>
+  <a href="/api/status">JSON API</a> &middot;
+  <a href="/admin">Admin</a>
 </div>
 <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;flex-wrap:wrap;gap:8px">
   {tab_bar}
@@ -1620,6 +1713,11 @@ class _Handler(BaseHTTPRequestHandler):
             )
             return
 
+        if parsed.path == "/admin":
+            saved = "saved" in qs
+            self._send(_render_admin_page(self.__class__.tachometer_root, saved=bool(saved)))
+            return
+
         repos = gather_repo_data(self.__class__.tachometer_root)
         host = gather_host_data(self.__class__.host_summary_path)
         agent_utilization = gather_agent_utilization_data(
@@ -1663,6 +1761,29 @@ class _Handler(BaseHTTPRequestHandler):
             # Redirect back to dashboard (303 See Other so browser does a GET)
             self.send_response(303)
             self.send_header("Location", f"/?view={view}")
+            self.end_headers()
+        elif parsed.path == "/admin/settings":
+            length = int(self.headers.get("Content-Length", "0"))
+            body = self.rfile.read(length).decode("utf-8") if length else ""
+            form = parse_qs(body)
+
+            def _int_field(key: str, default: int) -> int:
+                vals = form.get(key, [])
+                try:
+                    return max(1, int(vals[0])) if vals else default
+                except (ValueError, IndexError):
+                    return default
+
+            new_settings = {
+                "retention": {
+                    "sample_days": _int_field("sample_days", 365),
+                    "run_days": _int_field("run_days", 365),
+                    "backlog_resolved_days": _int_field("backlog_resolved_days", 365),
+                }
+            }
+            save_settings(_settings_path(self.__class__.tachometer_root), new_settings)
+            self.send_response(303)
+            self.send_header("Location", "/admin?saved=1")
             self.end_headers()
         else:
             self._send("Not Found", "text/plain", 404)
