@@ -28,6 +28,7 @@ class "ResourceSnapshot" as tachometer.model.ResourceSnapshot {
   disk_io_write_bytes : int | None
   disk_total_bytes : int | None
   disk_used_bytes : int | None
+  fan_rpm_max : int | None
   git_commit_count : int | None
   git_dirty_file_count : int | None
   git_non_ignored_size_bytes : int | None
@@ -35,9 +36,11 @@ class "ResourceSnapshot" as tachometer.model.ResourceSnapshot {
   git_tracked_size_bytes : int | None
   git_untracked_file_count : int | None
   gpu_detected : bool
+  gpu_fan_pct : float | None
   gpu_mem_total_mb : float | None
   gpu_mem_used_mb : float | None
   gpu_name : str | None
+  gpu_temp_celsius : float | None
   gpu_util_percent : float | None
   hostname : str | None
   loadavg_15m : float | None
