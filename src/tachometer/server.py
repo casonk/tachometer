@@ -32,11 +32,11 @@ try:
 except ModuleNotFoundError:  # pragma: no cover - python < 3.11
     import tomli as tomllib  # type: ignore[no-redef]
 
-from .backlog import load_backlog, open_items
 from dataclasses import asdict
-from .settings import load_settings, save_settings
 
+from .backlog import load_backlog, open_items
 from .profile import collect_host_resource_snapshot, summarize_delta_pairs, summarize_run_records
+from .settings import load_settings, save_settings
 from .stoplight import (
     DEFAULT_THRESHOLDS,
     DELTA_THRESHOLDS,

@@ -480,14 +480,10 @@ def prune_profile_by_age(
     cutoff_runs = time.time() - run_days * 86400
 
     before_s = len(data["samples"])
-    data["samples"] = [
-        s for s in data["samples"]
-        if (s.get("timestamp") or 0) >= cutoff_samples
-    ]
+    data["samples"] = [s for s in data["samples"] if (s.get("timestamp") or 0) >= cutoff_samples]
     before_r = len(data["runs"])
     data["runs"] = [
-        r for r in data["runs"]
-        if (r.get("started_at") or r.get("timestamp") or 0) >= cutoff_runs
+        r for r in data["runs"] if (r.get("started_at") or r.get("timestamp") or 0) >= cutoff_runs
     ]
     if len(data["samples"]) != before_s or len(data["runs"]) != before_r:
         profile_path.write_text(json.dumps(data, indent=2), encoding="utf-8")

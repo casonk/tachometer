@@ -6,6 +6,7 @@ All values have safe defaults so missing keys never break a run.
 
 from __future__ import annotations
 
+import contextlib
 from pathlib import Path
 from typing import Any
 
@@ -34,10 +35,8 @@ def load_settings(path: str | Path) -> dict[str, Any]:
     p = Path(path)
     data: dict[str, Any] = {}
     if p.exists():
-        try:
+        with contextlib.suppress(Exception):
             data = tomllib.loads(p.read_text(encoding="utf-8"))
-        except Exception:
-            pass
     # Merge defaults for any missing keys.
     merged: dict[str, Any] = {}
     for section, defaults in _DEFAULTS.items():
