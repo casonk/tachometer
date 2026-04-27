@@ -230,7 +230,8 @@ def prune_resolved_backlog(backlog_path: Path, *, resolved_days: int = 365) -> N
         time.localtime(time.time() - resolved_days * 86400),
     )
     pruned = [
-        e for e in entries
+        e
+        for e in entries
         if e.get("status") != "auto-resolved" or (e.get("resolved_at", "") >= cutoff)
     ]
     if len(pruned) != len(entries):
