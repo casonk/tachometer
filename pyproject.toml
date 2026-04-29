@@ -10,11 +10,25 @@ readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "MIT" }
 authors = [
-  { name = "Cason Konzer" },
+  { name = "Cason Konzer", email = "casonk@umich.edu" },
+]
+keywords = ["profiling", "benchmarking", "repo", "resources", "devops"]
+classifiers = [
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3 :: Only",
+  "Operating System :: OS Independent",
+  "Topic :: Software Development :: Testing",
+  "Topic :: System :: Benchmark",
+  "License :: OSI Approved :: MIT License",
 ]
 dependencies = [
   "tomli>=2; python_version < '3.11'",
 ]
+
+[project.urls]
+Homepage = "https://github.com/casonk/tachometer"
+Repository = "https://github.com/casonk/tachometer"
+Changelog = "https://github.com/casonk/tachometer/blob/main/CHANGELOG.md"
 
 [project.optional-dependencies]
 dev = ["pytest", "ruff", "black"]
