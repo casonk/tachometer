@@ -12,7 +12,8 @@ host_summary_path = ".tachometer/host-summary.json"
 
 [defaults]
 label = "repo-snapshot"
+# [notify] values are machine-local — do not commit real paths or contact identifiers here.
 [notify]
-shock_relay_root = "SHOCK_RELAY_ROOT_PLACEHOLDER"
+shock_relay_root = ""
 service = "signal"
-target = "+1XXXXXXXXXX"
+target = ""
