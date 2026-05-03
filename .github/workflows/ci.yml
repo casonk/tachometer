@@ -20,6 +20,7 @@ jobs:
           python -m pip install --upgrade pip
           pip install ruff pytest black
           pip install -e .
+          pip install git+https://github.com/casonk/dyno-lab.git
       - name: Lint (ruff)
         run: ruff check .
       - name: Format check (ruff)
