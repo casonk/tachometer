@@ -47,6 +47,51 @@ SKIP_DIR_NAMES = {
 }
 
 _ARTEFACT_DIR_NAMES = frozenset({"dist", "build", ".eggs"})
+
+_SOURCE_EXTENSIONS = frozenset(
+    {
+        ".py",
+        ".sh",
+        ".bash",
+        ".zsh",
+        ".fish",
+        ".js",
+        ".mjs",
+        ".cjs",
+        ".jsx",
+        ".ts",
+        ".tsx",
+        ".go",
+        ".rs",
+        ".rb",
+        ".java",
+        ".c",
+        ".cc",
+        ".cpp",
+        ".cxx",
+        ".h",
+        ".hpp",
+        ".cs",
+        ".kt",
+        ".swift",
+        ".lua",
+    }
+)
+_DOC_EXTENSIONS = frozenset({".md", ".rst", ".adoc", ".asciidoc", ".txt"})
+_CONFIG_EXTENSIONS = frozenset(
+    {
+        ".toml",
+        ".yaml",
+        ".yml",
+        ".ini",
+        ".cfg",
+        ".conf",
+        ".json",
+    }
+)
+_CONFIG_EXACT_NAMES = frozenset({"Dockerfile", "Makefile", "Pipfile"})
+_SKIP_EXTENSIONS = frozenset({".lock", ".pyc", ".pyo", ".whl", ".egg"})
+_MAX_LINECOUNT_BYTES = 512 * 1024  # skip files larger than 512 KB
 _RAPL_ENERGY_PATH = Path("/sys/class/powercap/intel-rapl/intel-rapl:0/energy_uj")
 
 
@@ -328,6 +373,37 @@ def _git_metrics(repo_root: Path) -> dict[str, int | None]:
     }
 
 
+def _count_lines(root: Path) -> dict[str, int]:
+    source = doc = config = 0
+    for walk_root, dirnames, filenames in os.walk(root):
+        dirnames[:] = [d for d in dirnames if d not in SKIP_DIR_NAMES]
+        for fname in filenames:
+            suffix = Path(fname).suffix.lower()
+            if suffix in _SKIP_EXTENSIONS or fname.endswith(".lock"):
+                continue
+            if suffix in _SOURCE_EXTENSIONS:
+                cat = "source"
+            elif suffix in _DOC_EXTENSIONS:
+                cat = "doc"
+            elif suffix in _CONFIG_EXTENSIONS or fname in _CONFIG_EXACT_NAMES:
+                cat = "config"
+            else:
+                continue
+            fpath = Path(walk_root) / fname
+            with contextlib.suppress(OSError):
+                if fpath.stat().st_size > _MAX_LINECOUNT_BYTES:
+                    continue
+            with contextlib.suppress(OSError, UnicodeDecodeError):
+                n = len(fpath.read_text(encoding="utf-8", errors="ignore").splitlines())
+                if cat == "source":
+                    source += n
+                elif cat == "doc":
+                    doc += n
+                else:
+                    config += n
+    return {"source_lines": source, "doc_lines": doc, "config_lines": config}
+
+
 def _repo_metrics(repo_root: str | Path | None) -> dict[str, Any]:
     if repo_root is None:
         return {}
@@ -356,6 +432,7 @@ def _repo_metrics(repo_root: str | Path | None) -> dict[str, Any]:
         "artefact_size_bytes": _artefact_size(root),
     }
     metrics.update(_git_metrics(root))
+    metrics.update(_count_lines(root))
     return metrics
 
 
@@ -548,6 +625,9 @@ def summarize_samples(profile_path: str | Path) -> dict[str, Any]:
         "latest_git_commit_count": _latest_numeric(samples, "git_commit_count"),
         "latest_dep_count": _latest_numeric(samples, "dep_count"),
         "latest_artefact_size_bytes": _latest_numeric(samples, "artefact_size_bytes"),
+        "latest_source_lines": _latest_numeric(samples, "source_lines"),
+        "latest_doc_lines": _latest_numeric(samples, "doc_lines"),
+        "latest_config_lines": _latest_numeric(samples, "config_lines"),
         "latest_uptime_seconds": _latest_numeric(samples, "uptime_seconds"),
         "latest_process_count": _latest_numeric(samples, "process_count"),
         "latest_cpu_temp_celsius": _latest_numeric(samples, "cpu_temp_celsius"),

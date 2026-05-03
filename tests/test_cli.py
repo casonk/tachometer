@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 import json
-import sys
 from pathlib import Path
 
+import pytest
+from dyno_lab import AttrPatch
+
+import tachometer.server as _server_mod
 from tachometer.cli import main
 
 
@@ -34,59 +37,66 @@ def _write_manifest(repo_root: Path, *, name: str = "temp", category: str = "uti
     return manifest_path
 
 
-def test_cli_snapshot_writes_profile_and_summary(tmp_path: Path, capsys):
+@pytest.mark.integration
+def test_cli_snapshot_writes_profile_and_summary(tmp_path: Path, dyno_cli):
     manifest_path = _write_manifest(tmp_path)
     (tmp_path / "README.md").write_text("hello\n", encoding="utf-8")
 
-    rc = main(["snapshot", "--manifest", str(manifest_path)])
+    result = dyno_cli(main, ["snapshot", "--manifest", str(manifest_path)])
 
-    assert rc == 0
+    assert result.exit_code == 0
     assert (tmp_path / ".tachometer" / "profile.json").exists()
     assert (tmp_path / ".tachometer" / "summary.json").exists()
-    output = json.loads(capsys.readouterr().out)
+    output = json.loads(result.stdout)
     assert output["name"] == "repo-snapshot"
 
 
-def test_cli_host_snapshot_writes_host_profile_and_summary(tmp_path: Path, capsys):
+@pytest.mark.integration
+def test_cli_host_snapshot_writes_host_profile_and_summary(tmp_path: Path, dyno_cli):
     manifest_path = _write_manifest(tmp_path)
 
-    rc = main(["host-snapshot", "--manifest", str(manifest_path)])
+    result = dyno_cli(main, ["host-snapshot", "--manifest", str(manifest_path)])
 
-    assert rc == 0
+    assert result.exit_code == 0
     assert (tmp_path / ".tachometer" / "host-profile.json").exists()
     assert (tmp_path / ".tachometer" / "host-summary.json").exists()
-    output = json.loads(capsys.readouterr().out)
+    output = json.loads(result.stdout)
     assert output["name"] == "host-snapshot"
     assert output["repo_root"] is None
 
 
-def test_cli_agent_utilization_writes_sidecar(tmp_path: Path, monkeypatch, capsys):
+@pytest.mark.unit
+def test_cli_agent_utilization_writes_sidecar(tmp_path: Path, dyno_cli):
+    import tachometer.cli as cli_mod
+
     manifest_path = _write_manifest(tmp_path)
-    monkeypatch.setattr(
-        "tachometer.cli.collect_agent_utilization",
-        lambda: {
-            "captured_at": 1.0,
-            "overall_light": "yellow",
-            "providers": {
-                "codex": {
-                    "display_name": "Codex",
-                    "summary": "P4% / S71%",
-                    "light": "yellow",
-                }
-            },
+    fake_snapshot = {
+        "captured_at": 1.0,
+        "overall_light": "yellow",
+        "providers": {
+            "codex": {
+                "display_name": "Codex",
+                "summary": "P4% / S71%",
+                "light": "yellow",
+            }
         },
-    )
+    }
 
-    rc = main(["agent-utilization", "--manifest", str(manifest_path)])
+    with AttrPatch(cli_mod, collect_agent_utilization=lambda: fake_snapshot):
+        result = dyno_cli(main, ["agent-utilization", "--manifest", str(manifest_path)])
 
-    assert rc == 0
+    assert result.exit_code == 0
     assert (tmp_path / ".tachometer" / "agent-utilization.json").exists()
-    output = json.loads(capsys.readouterr().out)
+    output = json.loads(result.stdout)
     assert output["overall_light"] == "yellow"
     assert output["providers"]["codex"]["summary"] == "P4% / S71%"
 
 
+@pytest.mark.slow
+@pytest.mark.integration
 def test_cli_run_profiles_command(tmp_path: Path):
+    import sys
+
     manifest_path = _write_manifest(tmp_path, name="doseido", category="health-repos")
 
     rc = main(
@@ -111,20 +121,24 @@ def test_cli_run_profiles_command(tmp_path: Path):
     assert summary["sample_count"] == 2
 
 
-def test_cli_serve_uses_loopback_host_by_default(tmp_path: Path, monkeypatch):
+@pytest.mark.unit
+def test_cli_serve_uses_loopback_host_by_default(tmp_path: Path):
     manifest_path = _write_manifest(tmp_path)
     captured: dict[str, object] = {}
 
     def fake_serve(repo_root, *, host, host_summary_path, port, allow_remote):
-        captured["repo_root"] = repo_root
-        captured["host"] = host
-        captured["host_summary_path"] = host_summary_path
-        captured["port"] = port
-        captured["allow_remote"] = allow_remote
+        captured.update(
+            {
+                "repo_root": repo_root,
+                "host": host,
+                "host_summary_path": host_summary_path,
+                "port": port,
+                "allow_remote": allow_remote,
+            }
+        )
 
-    monkeypatch.setattr("tachometer.server.serve", fake_serve)
-
-    rc = main(["serve", "--manifest", str(manifest_path)])
+    with AttrPatch(_server_mod, serve=fake_serve):
+        rc = main(["serve", "--manifest", str(manifest_path)])
 
     assert rc == 0
     assert captured["host"] == "127.0.0.1"
@@ -132,26 +146,25 @@ def test_cli_serve_uses_loopback_host_by_default(tmp_path: Path, monkeypatch):
     assert captured["allow_remote"] is False
 
 
-def test_cli_serve_allows_explicit_remote_bind(tmp_path: Path, monkeypatch):
+@pytest.mark.unit
+def test_cli_serve_allows_explicit_remote_bind(tmp_path: Path):
     manifest_path = _write_manifest(tmp_path)
     captured: dict[str, object] = {}
 
     def fake_serve(repo_root, *, host, host_summary_path, port, allow_remote):
-        captured["host"] = host
-        captured["allow_remote"] = allow_remote
+        captured.update({"host": host, "allow_remote": allow_remote})
 
-    monkeypatch.setattr("tachometer.server.serve", fake_serve)
-
-    rc = main(
-        [
-            "serve",
-            "--manifest",
-            str(manifest_path),
-            "--host",
-            "0.0.0.0",
-            "--allow-remote",
-        ]
-    )
+    with AttrPatch(_server_mod, serve=fake_serve):
+        rc = main(
+            [
+                "serve",
+                "--manifest",
+                str(manifest_path),
+                "--host",
+                "0.0.0.0",
+                "--allow-remote",
+            ]
+        )
 
     assert rc == 0
     assert captured["host"] == "0.0.0.0"

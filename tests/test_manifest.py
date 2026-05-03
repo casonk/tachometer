@@ -1,8 +1,11 @@
 from pathlib import Path
 
+import pytest
+
 from tachometer.manifest import load_manifest
 
 
+@pytest.mark.integration
 def test_load_example_manifest_resolves_repo_root_and_paths():
     manifest = load_manifest(
         Path(__file__).resolve().parent.parent / "examples" / "doseido" / "repo-profile.toml"
