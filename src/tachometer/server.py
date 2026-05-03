@@ -169,6 +169,7 @@ def gather_repo_data(tachometer_root: Path) -> list[dict[str, Any]]:
         {
             "name": "tachometer",
             "path": "./util-repos/tachometer",
+            "role": "service",
             "reason": "Self-profile.",
             "run_command": "python3 -m pytest tests/ -q",
         }
@@ -200,6 +201,7 @@ def gather_repo_data(tachometer_root: Path) -> list[dict[str, Any]]:
             {
                 "name": repo["name"],
                 "category": _category_from_path(path_str),
+                "role": repo.get("role", "script"),
                 "has_data": has_data,
                 "has_delta": has_delta,
                 "has_process": has_process,
@@ -789,6 +791,72 @@ def _render_light_tally(tally: dict[str, dict[str, int]]) -> str:
     )
 
 
+def _fmt_loc(n: int | None) -> str:
+    if n is None:
+        return "—"
+    if n >= 1_000_000:
+        return f"{n / 1_000_000:.1f}M"
+    if n >= 1_000:
+        return f"{n / 1_000:.1f}k"
+    return str(n)
+
+
+def _render_loc_aggregate(repos: list[dict[str, Any]]) -> str:
+    service_src = script_src = total_doc = total_cfg = 0
+    service_src_repos = script_src_repos = 0
+    for repo in repos:
+        if not repo.get("has_data"):
+            continue
+        s = repo["summary"]
+        src = s.get("latest_source_lines") or 0
+        doc = s.get("latest_doc_lines") or 0
+        cfg = s.get("latest_config_lines") or 0
+        if repo.get("role") == "service":
+            service_src += src
+            if src:
+                service_src_repos += 1
+        else:
+            script_src += src
+            if src:
+                script_src_repos += 1
+        total_doc += doc
+        total_cfg += cfg
+
+    if not (service_src or script_src or total_doc or total_cfg):
+        return ""
+
+    def _chip(label: str, value: str, note: str = "") -> str:
+        note_html = (
+            f'<span style="font-size:0.65rem;color:#94a3b8;margin-left:4px">{note}</span>'
+            if note
+            else ""
+        )
+        return (
+            f'<span style="padding:4px 10px;border:1px solid #e2e8f0;border-radius:999px;'
+            f'background:white;font-size:0.75rem;color:#475569;white-space:nowrap">'
+            f'{label}&nbsp;<strong style="color:#1e293b">{value}</strong>{note_html}</span>'
+        )
+
+    chips = [
+        _chip("Service src", _fmt_loc(service_src), f"{service_src_repos} repos"),
+        _chip("Script src", _fmt_loc(script_src), f"{script_src_repos} repos"),
+        _chip("Docs", _fmt_loc(total_doc)),
+        _chip("Config", _fmt_loc(total_cfg)),
+    ]
+    total_src = service_src + script_src
+    chips.insert(
+        0,
+        _chip("Total src", _fmt_loc(total_src)),
+    )
+    return (
+        '<div style="display:flex;gap:6px;flex-wrap:wrap;margin:10px 0 6px;'
+        "padding:8px 12px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;"
+        'align-items:center">'
+        '<span style="font-size:0.7rem;color:#94a3b8;margin-right:4px;white-space:nowrap">'
+        "Lines of Code:</span>" + "".join(chips) + "</div>"
+    )
+
+
 _VIEW_DESCRIPTIONS = {
     "system": "System-wide snapshots — CPU/mem/GPU from /proc &amp; nvidia-smi, averaged across all samples",
     "delta": "Resource change during <code>run</code> subcommand — how much the system shifted pre→post",
@@ -840,6 +908,9 @@ def _render_system_row(
     commits = s.get("latest_git_commit_count")
     dep_count = s.get("latest_dep_count")
     artefact_size = s.get("latest_artefact_size_bytes")
+    source_lines = s.get("latest_source_lines")
+    doc_lines = s.get("latest_doc_lines")
+    config_lines = s.get("latest_config_lines")
 
     _cpu_t = DEFAULT_THRESHOLDS["cpu_percent"]
     _load_t = DEFAULT_THRESHOLDS["loadavg_ratio"]
@@ -871,9 +942,24 @@ def _render_system_row(
         if dep_count
         else ""
     )
+    loc_parts = []
+    if source_lines:
+        loc_parts.append(f"{_fmt_loc(int(source_lines))} src")
+    if doc_lines:
+        loc_parts.append(f"{_fmt_loc(int(doc_lines))} doc")
+    if config_lines:
+        loc_parts.append(f"{_fmt_loc(int(config_lines))} cfg")
+    loc_span = (
+        f'<div style="font-size:0.65rem;color:#94a3b8">{" · ".join(loc_parts)}</div>'
+        if loc_parts
+        else ""
+    )
     repo_cell = (
         f'<div style="font-size:0.7rem;color:#64748b">'
-        f"{int(files) if files else '—'} tracked{dirty_span}</div>" + commit_span + dep_span
+        f"{int(files) if files else '—'} tracked{dirty_span}</div>"
+        + commit_span
+        + dep_span
+        + loc_span
     )
 
     art_light = light_max(artefact_size, **_art_t) if artefact_size else "unknown"
@@ -1488,6 +1574,7 @@ def _render_dashboard(
     agent_utilization_banner = _render_agent_utilization_banner(agent_utilization)
     fedora_debug_banner = _render_fedora_debug_banner(fedora_debug)
     tally_html = _render_light_tally(_compute_light_tally(repos, view))
+    loc_html = _render_loc_aggregate(repos)
     live_panel = _LIVE_PANEL_HTML
 
     # Dynamic gauge scale — largest total repo size = 100% bar width.
@@ -1605,6 +1692,7 @@ def _render_dashboard(
   </div>
 </div>
 {live_panel}
+{loc_html}
 {tally_html}
 <table>
 <thead>

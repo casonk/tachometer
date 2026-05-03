@@ -19,6 +19,7 @@ class "RepoManifest" as tachometer.model.RepoManifest {
 }
 class "ResourceSnapshot" as tachometer.model.ResourceSnapshot {
   artefact_size_bytes : int | None
+  config_lines : int | None
   cpu_count : int | None
   cpu_percent : float | None
   cpu_temp_celsius : float | None
@@ -28,6 +29,7 @@ class "ResourceSnapshot" as tachometer.model.ResourceSnapshot {
   disk_io_write_bytes : int | None
   disk_total_bytes : int | None
   disk_used_bytes : int | None
+  doc_lines : int | None
   fan_rpm_max : int | None
   git_commit_count : int | None
   git_dirty_file_count : int | None
@@ -56,6 +58,7 @@ class "ResourceSnapshot" as tachometer.model.ResourceSnapshot {
   repo_file_count : int | None
   repo_root : str | None
   repo_size_bytes : int | None
+  source_lines : int | None
   swap_total_bytes : int | None
   swap_used_bytes : int | None
   timestamp : float

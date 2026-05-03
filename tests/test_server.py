@@ -3,6 +3,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
+
 from tachometer.server import (
     _build_api_payload,
     _render_dashboard,
@@ -14,6 +16,7 @@ from tachometer.server import (
 )
 
 
+@pytest.mark.unit
 def test_gather_host_data_loads_canonical_summary(tmp_path: Path):
     host_summary_path = tmp_path / "host-summary.json"
     host_summary_path.write_text(
@@ -38,6 +41,7 @@ def test_gather_host_data_loads_canonical_summary(tmp_path: Path):
     assert "repo_size" not in host["stoplight_host"]["lights"]
 
 
+@pytest.mark.unit
 def test_build_api_payload_includes_host_summary():
     repos = [
         {
@@ -90,6 +94,7 @@ def test_build_api_payload_includes_host_summary():
     assert payload["fedora_debug_light"] == "red"
 
 
+@pytest.mark.unit
 def test_render_dashboard_includes_host_metrics():
     repos = [
         {
@@ -222,6 +227,7 @@ def test_render_dashboard_includes_host_metrics():
     assert "Go" in html
 
 
+@pytest.mark.unit
 def test_render_dashboard_keeps_legacy_fedora_debug_sidecar_shape():
     repos = []
     host = {
@@ -259,6 +265,7 @@ def test_render_dashboard_keeps_legacy_fedora_debug_sidecar_shape():
     assert "GPU" in html
 
 
+@pytest.mark.unit
 def test_gather_agent_utilization_data_loads_sidecar(tmp_path: Path):
     sidecar_path = tmp_path / "agent-utilization.json"
     sidecar_path.write_text(
@@ -285,6 +292,7 @@ def test_gather_agent_utilization_data_loads_sidecar(tmp_path: Path):
     assert agent_utilization["snapshot"]["providers"]["codex"]["summary"] == "P4% / S71%"
 
 
+@pytest.mark.unit
 def test_gather_fedora_debug_data_loads_sidecar(tmp_path: Path):
     sidecar_path = tmp_path / "tachometer-signals.json"
     sidecar_path.write_text(
@@ -310,6 +318,7 @@ def test_gather_fedora_debug_data_loads_sidecar(tmp_path: Path):
     assert fedora_debug["signals"]["buckets"]["storage"]["summary"] == "btrfs counters"
 
 
+@pytest.mark.unit
 def test_validate_bind_host_rejects_non_loopback_without_opt_in():
     try:
         _validate_bind_host("0.0.0.0", allow_remote=False)
@@ -319,11 +328,13 @@ def test_validate_bind_host_rejects_non_loopback_without_opt_in():
         raise AssertionError("expected ValueError for non-loopback bind")
 
 
+@pytest.mark.unit
 def test_validate_bind_host_allows_loopback_and_explicit_remote():
     _validate_bind_host("127.0.0.1", allow_remote=False)
     _validate_bind_host("0.0.0.0", allow_remote=True)
 
 
+@pytest.mark.unit
 def test_same_origin_request_requires_matching_host():
     headers = {
         "Host": "127.0.0.1:5100",
