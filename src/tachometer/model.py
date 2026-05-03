@@ -70,6 +70,9 @@ class ResourceSnapshot:
     git_commit_count: int | None = None
     dep_count: int | None = None
     artefact_size_bytes: int | None = None
+    source_lines: int | None = None
+    doc_lines: int | None = None
+    config_lines: int | None = None
     uptime_seconds: float | None = None
     hostname: str | None = None
     process_count: int | None = None
