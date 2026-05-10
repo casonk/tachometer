@@ -14,6 +14,10 @@ should change how future sessions work in this repo.
 
 ## Lessons
 
+- Disk red-light backlog entries are a cross-repo automation contract. Keep
+  `system.disk` and `host.disk` suggestions pointed at the shared
+  traction-control disk-pressure agentic remediation job and reversible
+  repo-local archive automation, rather than manual deletion.
 - Keep heterogeneous host-level telemetry, such as local AI-provider token
   usage, in a dedicated sidecar instead of forcing it into the repo snapshot
   summary schema.
