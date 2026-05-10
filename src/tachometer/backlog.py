@@ -39,7 +39,8 @@ _SUGGESTIONS: dict[str, list[str]] = {
         "Or adjust the memory_utilization_ratio threshold.",
     ],
     "disk": [
-        "Clean up disk space, remove build artefacts, or expand storage.",
+        "Run the traction-control tachometer disk-pressure agentic remediation job to add or repair repo-local auto compression/decompression.",
+        "Prefer reversible archives for local-only caches, generated artefacts, and debug outputs; do not delete source data.",
         "Or adjust the disk_utilization_ratio threshold.",
     ],
     "gpu": [

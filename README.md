@@ -101,6 +101,20 @@ AI Utilization strip sourced from local CLI state:
 Copilot usage only appears after at least one session has started, and the
 current session totals land when that session shuts down.
 
+## Disk Pressure Response
+
+When disk utilization crosses the red threshold, `tachometer` writes an open
+`system.disk` or `host.disk` item to the local `.tachometer/backlog.json` /
+`.tachometer/host-backlog.json` file. The shared remediation path lives in
+`./util-repos/traction-control`: its tachometer disk-pressure agentic job scans
+those backlog and summary files, selects clean pressure candidates, and launches
+an agent to add reversible repo-local archive automation.
+
+The standard fix pattern is intentionally conservative: compress/decompress
+local-only caches, generated artefacts, temporary downloads, and debug snapshots
+with an audit trail; never delete source data or raw private inputs as the
+default pressure response.
+
 ## Manifest Shape
 
 ```toml
