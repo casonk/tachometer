@@ -22,3 +22,7 @@ CHATHISTORY.md
 CLAUDE.md
 
 /REFS-LOCAL.md
+
+# rendered clockwork manifests (machine-specific paths; use *.toml.template)
+config/clockwork/portfolio-server.toml
+config/clockwork/portfolio-snapshot.toml
