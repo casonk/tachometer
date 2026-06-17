@@ -31,7 +31,7 @@ Repository = "https://github.com/casonk/tachometer"
 Changelog = "https://github.com/casonk/tachometer/blob/main/CHANGELOG.md"
 
 [project.optional-dependencies]
-dev = ["pytest", "ruff", "black", "dyno-lab"]
+dev = ["pytest", "ruff", "dyno_lab @ git+https://github.com/casonk/dyno-lab.git"]
 
 [project.scripts]
 tachometer = "tachometer.cli:main"
