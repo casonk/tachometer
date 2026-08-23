@@ -32,6 +32,46 @@ convention.
 That split is intentional. `private-repository` keeps its controller and system monitor;
 `tachometer` owns the lower-level profiling primitive those features depend on.
 
+## Platform support
+
+The package installs and the CLI runs on Linux, macOS and Windows, verified by
+CI on every push. **How much it can actually measure differs sharply**, because
+most signals come from interfaces only Linux provides.
+
+| Signal source | Linux | macOS | Windows |
+| --- | :---: | :---: | :---: |
+| Repo metrics (size, file counts, git) | yes | yes | yes |
+| Disk usage | yes | yes | yes |
+| Child CPU time, peak RSS, page faults (`resource`) | yes | yes | **no** |
+| Per-process CPU, memory, I/O (`psutil`, optional) | yes | yes | yes |
+| Load average, memory detail, uptime, process count (`/proc`) | yes | **no** | **no** |
+| CPU temperature, fan RPM (`/sys/class`) | yes | **no** | **no** |
+| Energy in joules (Intel RAPL) | yes | **no** | **no** |
+| GPU (`nvidia-smi`) | if present | if present | if present |
+
+### What this means in practice
+
+**Linux** is the reference platform. Everything above works.
+
+**macOS** loses the `/proc` and `/sys` signals — no load average detail, memory
+breakdown, uptime, process count, temperature, fan or energy. Child-process CPU
+and memory still work, because `resource` is a Unix module.
+
+**Windows** additionally loses `resource`, which does not exist there at all.
+Without `psutil` installed, a profiled command reports `None` for CPU percent,
+peak RSS and fault counts.
+
+`psutil` is not a declared dependency, so on Windows it is worth installing
+explicitly for anything beyond timing:
+
+```bash
+pip install psutil
+```
+
+Fields that cannot be measured are reported as `None` rather than `0`, so a
+missing signal is distinguishable from a genuine zero. Widening native Windows
+coverage is tracked in [`BACKLOG.md`](BACKLOG.md).
+
 ## Install
 
 ```bash
