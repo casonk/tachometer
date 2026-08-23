@@ -3,7 +3,6 @@ from __future__ import annotations
 import contextlib
 import json
 import os
-import resource
 import shutil
 import socket
 import subprocess
@@ -30,6 +29,30 @@ try:
 except ImportError:
     _psutil = None  # type: ignore[assignment]
     _PSUTIL_AVAILABLE = False
+
+# `resource` is a Unix-only stdlib module: it does not exist on Windows at all.
+# Importing it unconditionally made the whole package unimportable there, so
+# `import tachometer` failed before any profiling was attempted.
+#
+# psutil already supplies richer per-process metrics and does support Windows,
+# so rusage is only the fallback path when psutil is absent. On Windows without
+# psutil there is no source for these numbers, and the fields are reported as
+# None rather than guessed at.
+try:
+    import resource as _resource
+
+    _RESOURCE_AVAILABLE = True
+except ImportError:
+    _resource = None  # type: ignore[assignment]
+    _RESOURCE_AVAILABLE = False
+
+
+def _getrusage_children() -> Any | None:
+    """Child-process rusage, or None where the platform has no `resource`."""
+    if not _RESOURCE_AVAILABLE or _resource is None:
+        return None
+    return _resource.getrusage(_resource.RUSAGE_CHILDREN)
+
 
 SKIP_DIR_NAMES = {
     ".git",
@@ -781,7 +804,8 @@ def run_profiled_command(
     started = time.time()
     _rapl_before = _read_rapl_energy_uj()
     # rusage snapshot before spawn — delta gives exact CPU time of the child tree.
-    _rusage_before = resource.getrusage(resource.RUSAGE_CHILDREN)
+    # None on platforms without `resource` (Windows); handled after the run.
+    _rusage_before = _getrusage_children()
     proc = subprocess.Popen(
         command,
         cwd=str(cwd) if cwd else None,
@@ -808,12 +832,15 @@ def run_profiled_command(
         _monitor_thread.join(timeout=2.0)
 
     # rusage after — captures CPU time even for processes too fast to psutil-sample.
-    _rusage_after = resource.getrusage(resource.RUSAGE_CHILDREN)
-    _cpu_time = (_rusage_after.ru_utime - _rusage_before.ru_utime) + (
-        _rusage_after.ru_stime - _rusage_before.ru_stime
-    )
-    # ru_maxrss is in kilobytes on Linux.
-    _rusage_peak_rss = int(_rusage_after.ru_maxrss) * 1024
+    _rusage_after = _getrusage_children()
+    _cpu_time: float | None = None
+    _rusage_peak_rss: int | None = None
+    if _rusage_before is not None and _rusage_after is not None:
+        _cpu_time = (_rusage_after.ru_utime - _rusage_before.ru_utime) + (
+            _rusage_after.ru_stime - _rusage_before.ru_stime
+        )
+        # ru_maxrss is in kilobytes on Linux.
+        _rusage_peak_rss = int(_rusage_after.ru_maxrss) * 1024
     _rapl_after = _read_rapl_energy_uj()
     _energy_joules: float | None = None
     if _rapl_before is not None and _rapl_after is not None:
@@ -821,8 +848,11 @@ def run_profiled_command(
         if _delta_uj >= 0:  # skip wraparound
             _energy_joules = round(_delta_uj / 1e6, 3)
 
-    _minor_faults = int(_rusage_after.ru_minflt - _rusage_before.ru_minflt)
-    _major_faults = int(_rusage_after.ru_majflt - _rusage_before.ru_majflt)
+    _minor_faults: int | None = None
+    _major_faults: int | None = None
+    if _rusage_before is not None and _rusage_after is not None:
+        _minor_faults = int(_rusage_after.ru_minflt - _rusage_before.ru_minflt)
+        _major_faults = int(_rusage_after.ru_majflt - _rusage_before.ru_majflt)
 
     if _proc_samples:
         cpu_vals = [s["cpu_percent"] for s in _proc_samples]
@@ -853,8 +883,13 @@ def run_profiled_command(
     else:
         # Fallback: derive avg CPU% from rusage wall-clock accounting,
         # normalised by cpu_count to match the psutil path (0–100 % of total capacity).
+        # With neither psutil nor `resource` — a bare Windows install — there is
+        # no source for these numbers, so they are reported as None instead of a
+        # fabricated zero, which would read as "measured, and idle".
         _cpu_count = os.cpu_count() or 1
-        _avg_cpu = round(_cpu_time / runtime * 100 / _cpu_count, 3) if runtime > 0 else 0.0
+        _avg_cpu: float | None = None
+        if _cpu_time is not None:
+            _avg_cpu = round(_cpu_time / runtime * 100 / _cpu_count, 3) if runtime > 0 else 0.0
         proc_metrics = {
             "proc_avg_cpu_percent": _avg_cpu,
             "proc_peak_cpu_percent": _avg_cpu,
