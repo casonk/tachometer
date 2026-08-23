@@ -25,6 +25,41 @@ All originally-planned items are now implemented.
 
 ## Future ideas
 
+### Detailed monitoring on Windows
+
+The package installs and runs on Windows, but measures very little there. The
+`resource` module does not exist, and every `/proc` and `/sys` signal is
+Linux-only, so without `psutil` a profiled command reports `None` for CPU
+percent, peak RSS and fault counts. See the platform table in `README.md`.
+
+Worth supporting properly if anything in the portfolio is ever profiled on
+Windows. Roughly in order of value per unit of effort:
+
+- **Make `psutil` the primary collector rather than the fallback** — it already
+  supports Windows and supplies per-process CPU, memory, I/O and context
+  switches. Today rusage is preferred and psutil fills gaps; inverting that
+  would make Windows a first-class path without new dependencies on Linux.
+  Largest win, and mostly a reordering of existing code.
+- **Declare `psutil` as an optional extra** — `pip install tachometer[metrics]`,
+  so the richer path is discoverable instead of relying on the user happening
+  to have it. Currently it is an undeclared soft dependency.
+- **Windows peak working set** — `GetProcessMemoryInfo` via `ctypes`, or
+  `psutil.Process.memory_info().peak_wset`, as the analogue of `ru_maxrss`.
+- **Windows CPU time** — `GetProcessTimes` for kernel/user split, the analogue
+  of `ru_utime`/`ru_stime`.
+- **Windows counterparts for the host snapshot** — load average has no direct
+  equivalent; the closest is the processor queue length from performance
+  counters. Uptime, process count and memory detail are all available through
+  `psutil` without `/proc`.
+- **Energy** — no RAPL equivalent is exposed on Windows. Intel Power Gadget is
+  discontinued, so this may simply stay Linux-only, and saying so explicitly is
+  a better outcome than leaving the field silently empty.
+
+Non-goal for now: temperature and fan RPM. Both need vendor-specific WMI
+providers or kernel drivers, and the payoff does not justify that surface.
+
+### Other
+
 - **Per-process network I/O** — `/proc/<pid>/net/dev` delta for the process tree; more precise than system-wide counters
 - **Dependency vulnerability scan** — run `pip-audit` or `safety` in the background and surface CVE counts
 - **Test coverage trend** — parse `.coverage` or `coverage.xml` and track line/branch coverage over time
