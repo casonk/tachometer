@@ -1,7 +1,7 @@
 """Stoplight signal evaluation for tachometer resource summaries.
 
-Thresholds are aligned with doseido's DEFAULT_TARGETS so that the same
-device-utilisation conventions apply portfolio-wide.  Downstream repos may
+Thresholds are aligned with the origin profiler's DEFAULT_TARGETS so that the
+same device-utilisation conventions apply portfolio-wide.  Downstream repos may
 supply their own thresholds dict to override.
 """
 

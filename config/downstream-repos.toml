@@ -96,19 +96,9 @@ role = "script"
 reason = "Shell utility repo adopting the shared profiling convention."
 no_run_reason = "Shell utility — no automated test suite"
 
-[[repos]]
-name = "doseido"
-path = "./health-repos/doseido"
-role = "script"
-reason = "Source repo for the original profiler contract and first direct code consumer."
-run_command = "python3 -m pytest tests/ -q"
-
-[[repos]]
-name = "personal-finance"
-path = "./personal-finance"
-role = "script"
-reason = "Python workflow repo adopting the shared profiling convention."
-run_command = ".venv/bin/python -m pytest tests/ -q"
+# Private downstream consumers (e.g. the profiler's origin repo) are kept in the
+# gitignored config/downstream-repos.local.toml, which the loader merges when
+# present. This file is public, so it must not name private repositories.
 
 [[repos]]
 name = "citegres"

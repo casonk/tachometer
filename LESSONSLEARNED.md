@@ -33,7 +33,7 @@ should change how future sessions work in this repo.
 - Keep repo-local manifests and examples free of machine-specific absolute
   paths; tracked profiling conventions should travel cleanly between portfolio
   repos and fresh clones.
-- Preserve the `doseido` profiler field names in shared summaries unless a
+- Preserve the origin profiler's field names in shared summaries unless a
   downstream migration explicitly coordinates a schema change.
 - Keep profiling outputs local-only under `.tachometer/` so tracked repos do
   not accumulate host-specific resource histories by default.

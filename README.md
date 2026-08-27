@@ -2,9 +2,10 @@
 
 Shared repo and resource profiling helpers for the portfolio.
 
-`tachometer` extracts the reusable profiling contract that first lived in
-`doseido`: resource snapshots, persisted sample history, command profiling, and
-portable JSON summaries. Downstream repos keep their own workload logic.
+`tachometer` extracts the reusable profiling contract that first lived in the
+portfolio's original per-repo profiler: resource snapshots, persisted sample
+history, command profiling, and portable JSON summaries. Downstream repos keep
+their own workload logic.
 `tachometer` owns the common profiling model, CLI, and repo-local manifest
 convention.
 
@@ -29,8 +30,9 @@ convention.
 - portfolio-wide dashboards or central metric shipping
 - long-running daemon collection
 
-That split is intentional. `doseido` keeps its controller and system monitor;
-`tachometer` owns the lower-level profiling primitive those features depend on.
+That split is intentional. The origin profiler keeps its controller and system
+monitor; `tachometer` owns the lower-level profiling primitive those features
+depend on.
 
 ## Platform support
 
@@ -85,7 +87,7 @@ pip install -e .[dev]
 Capture a repo snapshot from a tracked manifest:
 
 ```bash
-tachometer snapshot --manifest examples/doseido/repo-profile.toml
+tachometer snapshot --manifest examples/example-repo/repo-profile.toml
 ```
 
 Capture the canonical host snapshot used by the portfolio dashboard banner:
@@ -97,13 +99,13 @@ tachometer host-snapshot --manifest config/tachometer/profile.toml
 Profile a command and append pre/post samples plus a run record:
 
 ```bash
-tachometer run --manifest examples/doseido/repo-profile.toml -- python3 -m pytest -q
+tachometer run --manifest examples/example-repo/repo-profile.toml -- python3 -m pytest -q
 ```
 
 Print the current JSON summary:
 
 ```bash
-tachometer summarize --manifest examples/doseido/repo-profile.toml
+tachometer summarize --manifest examples/example-repo/repo-profile.toml
 ```
 
 Print the current canonical host summary:
@@ -159,7 +161,7 @@ default pressure response.
 
 ```toml
 [repo]
-name = "doseido"
+name = "example-repo"
 category = "health-repos"
 kind = "python"
 

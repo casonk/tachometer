@@ -1,0 +1,10 @@
+# Copy to downstream-repos.local.toml (gitignored) to profile private downstream
+# consumers without naming them in the tracked, public downstream-repos.toml.
+# The loader merges this file's [[repos]] into the tracked list when present.
+
+[[repos]]
+name = "example-private-consumer"
+path = "./health-repos/example-private-consumer"
+role = "script"
+reason = "A private repository that adopts the shared profiling convention."
+run_command = "python3 -m pytest tests/ -q"

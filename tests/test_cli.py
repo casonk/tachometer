@@ -97,7 +97,7 @@ def test_cli_agent_utilization_writes_sidecar(tmp_path: Path, dyno_cli):
 def test_cli_run_profiles_command(tmp_path: Path):
     import sys
 
-    manifest_path = _write_manifest(tmp_path, name="doseido", category="health-repos")
+    manifest_path = _write_manifest(tmp_path, name="example-repo", category="health-repos")
 
     rc = main(
         [
