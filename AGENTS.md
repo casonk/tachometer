@@ -39,9 +39,9 @@ pytest -q
 Useful commands:
 
 ```bash
-tachometer snapshot --manifest examples/private-repository/repo-profile.toml
-tachometer run --manifest examples/private-repository/repo-profile.toml -- python3 -m pytest -q
-tachometer summarize --manifest examples/private-repository/repo-profile.toml
+tachometer snapshot --manifest examples/example-repo/repo-profile.toml
+tachometer run --manifest examples/example-repo/repo-profile.toml -- python3 -m pytest -q
+tachometer summarize --manifest examples/example-repo/repo-profile.toml
 ```
 
 ## Operating Rules

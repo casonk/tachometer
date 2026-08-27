@@ -1,5 +1,5 @@
 [repo]
-name = "private-repository"
+name = "example-repo"
 category = "health-repos"
 kind = "python"
 

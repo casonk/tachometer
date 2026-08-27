@@ -45,7 +45,7 @@ def test_gather_host_data_loads_canonical_summary(tmp_path: Path):
 def test_build_api_payload_includes_host_summary():
     repos = [
         {
-            "name": "private-repository",
+            "name": "example-repo",
             "category": "health-repos",
             "has_data": True,
             "has_delta": False,
@@ -98,7 +98,7 @@ def test_build_api_payload_includes_host_summary():
 def test_render_dashboard_includes_host_metrics():
     repos = [
         {
-            "name": "private-repository",
+            "name": "example-repo",
             "category": "health-repos",
             "has_data": False,
             "has_delta": False,
