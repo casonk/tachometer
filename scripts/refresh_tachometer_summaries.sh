@@ -21,8 +21,13 @@ except ModuleNotFoundError:
 
 portfolio_root = pathlib.Path(sys.argv[1])
 config_path = pathlib.Path(sys.argv[2])
-data = tomllib.loads(config_path.read_text(encoding="utf-8"))
-for repo in data.get("repos", []):
+# Merge the gitignored .local overlay when present: the tracked file is public
+# and lists only public consumers, private ones live in the overlay.
+repos = []
+for path_ in (config_path, config_path.with_name("downstream-repos.local.toml")):
+    if path_.exists():
+        repos.extend(tomllib.loads(path_.read_text(encoding="utf-8")).get("repos", []))
+for repo in repos:
     path = repo.get("path", "").lstrip("./")
     if path:
         print(portfolio_root / path)

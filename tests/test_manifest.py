@@ -8,10 +8,10 @@ from tachometer.manifest import load_manifest
 @pytest.mark.integration
 def test_load_example_manifest_resolves_repo_root_and_paths():
     manifest = load_manifest(
-        Path(__file__).resolve().parent.parent / "examples" / "private-repository" / "repo-profile.toml"
+        Path(__file__).resolve().parent.parent / "examples" / "example-repo" / "repo-profile.toml"
     )
 
-    assert manifest.name == "private-repository"
+    assert manifest.name == "example-repo"
     assert manifest.category == "health-repos"
     assert manifest.kind == "python"
     assert "tachometer" in manifest.repo_root.name

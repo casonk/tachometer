@@ -145,11 +145,18 @@ def _load_json(path: Path) -> dict[str, Any]:
 
 
 def _load_downstream_repos(tachometer_root: Path) -> list[dict[str, Any]]:
-    config_path = tachometer_root / "config" / "downstream-repos.toml"
-    if not config_path.exists():
-        return []
-    data = tomllib.loads(config_path.read_text(encoding="utf-8"))
-    return data.get("repos", [])
+    config_dir = tachometer_root / "config"
+    repos: list[dict[str, Any]] = []
+    # The tracked file is public and lists only public consumers. Private
+    # consumers live in the gitignored .local overlay, merged here when present,
+    # so private repository names never appear in a tracked file.
+    for name in ("downstream-repos.toml", "downstream-repos.local.toml"):
+        config_path = config_dir / name
+        if not config_path.exists():
+            continue
+        data = tomllib.loads(config_path.read_text(encoding="utf-8"))
+        repos.extend(data.get("repos", []))
+    return repos
 
 
 def _portfolio_root(tachometer_root: Path) -> Path:
