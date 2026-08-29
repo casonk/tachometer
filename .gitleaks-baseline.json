@@ -10,8 +10,7 @@
   "Secret": "/mnt/4tb-m2/git/",
   "File": "config/clockwork/portfolio-snapshot.toml",
   "SymlinkFile": "",
-  "Commit": "a757e598661783dcf7fe0223dbdb1e640b212bf7",
-  "Link": "https://github.com/casonk/tachometer/blob/a757e598661783dcf7fe0223dbdb1e640b212bf7/config/clockwork/portfolio-snapshot.toml#L7",
+  "Commit": "d224e916bd91e7d6e8e2b8ec590de27510a89b21",
   "Entropy": 3.0778196,
   "Author": "casonk",
   "Email": "72440835+casonk@users.noreply.github.com",
@@ -21,7 +20,7 @@
    "local-path",
    "machine-specific"
   ],
-  "Fingerprint": "a757e598661783dcf7fe0223dbdb1e640b212bf7:config/clockwork/portfolio-snapshot.toml:portfolio-git-workspace-path:7"
+  "Fingerprint": "d224e916bd91e7d6e8e2b8ec590de27510a89b21:config/clockwork/portfolio-snapshot.toml:portfolio-git-workspace-path:7"
  },
  {
   "RuleID": "portfolio-git-workspace-path",
@@ -34,8 +33,7 @@
   "Secret": "/mnt/4tb-m2/git/",
   "File": "config/clockwork/portfolio-snapshot.toml",
   "SymlinkFile": "",
-  "Commit": "a757e598661783dcf7fe0223dbdb1e640b212bf7",
-  "Link": "https://github.com/casonk/tachometer/blob/a757e598661783dcf7fe0223dbdb1e640b212bf7/config/clockwork/portfolio-snapshot.toml#L20",
+  "Commit": "d224e916bd91e7d6e8e2b8ec590de27510a89b21",
   "Entropy": 3.0778196,
   "Author": "casonk",
   "Email": "72440835+casonk@users.noreply.github.com",
@@ -45,7 +43,7 @@
    "local-path",
    "machine-specific"
   ],
-  "Fingerprint": "a757e598661783dcf7fe0223dbdb1e640b212bf7:config/clockwork/portfolio-snapshot.toml:portfolio-git-workspace-path:20"
+  "Fingerprint": "d224e916bd91e7d6e8e2b8ec590de27510a89b21:config/clockwork/portfolio-snapshot.toml:portfolio-git-workspace-path:20"
  },
  {
   "RuleID": "portfolio-git-workspace-path",
@@ -58,8 +56,7 @@
   "Secret": "/mnt/4tb-m2/git/",
   "File": "config/clockwork/portfolio-snapshot.toml",
   "SymlinkFile": "",
-  "Commit": "a757e598661783dcf7fe0223dbdb1e640b212bf7",
-  "Link": "https://github.com/casonk/tachometer/blob/a757e598661783dcf7fe0223dbdb1e640b212bf7/config/clockwork/portfolio-snapshot.toml#L20",
+  "Commit": "d224e916bd91e7d6e8e2b8ec590de27510a89b21",
   "Entropy": 3.0778196,
   "Author": "casonk",
   "Email": "72440835+casonk@users.noreply.github.com",
@@ -69,7 +66,7 @@
    "local-path",
    "machine-specific"
   ],
-  "Fingerprint": "a757e598661783dcf7fe0223dbdb1e640b212bf7:config/clockwork/portfolio-snapshot.toml:portfolio-git-workspace-path:20"
+  "Fingerprint": "d224e916bd91e7d6e8e2b8ec590de27510a89b21:config/clockwork/portfolio-snapshot.toml:portfolio-git-workspace-path:20"
  },
  {
   "RuleID": "portfolio-git-workspace-path",
@@ -82,8 +79,7 @@
   "Secret": "/mnt/4tb-m2/git/",
   "File": "config/clockwork/portfolio-server.toml",
   "SymlinkFile": "",
-  "Commit": "8959aba9c6a95aea528376f730302a11d2670a0e",
-  "Link": "https://github.com/casonk/tachometer/blob/8959aba9c6a95aea528376f730302a11d2670a0e/config/clockwork/portfolio-server.toml#L6",
+  "Commit": "5a6654cde6657f768d6bcbda5ff3f5db6e226253",
   "Entropy": 3.0778196,
   "Author": "casonk",
   "Email": "72440835+casonk@users.noreply.github.com",
@@ -93,7 +89,7 @@
    "local-path",
    "machine-specific"
   ],
-  "Fingerprint": "8959aba9c6a95aea528376f730302a11d2670a0e:config/clockwork/portfolio-server.toml:portfolio-git-workspace-path:6"
+  "Fingerprint": "5a6654cde6657f768d6bcbda5ff3f5db6e226253:config/clockwork/portfolio-server.toml:portfolio-git-workspace-path:6"
  },
  {
   "RuleID": "portfolio-git-workspace-path",
@@ -106,8 +102,7 @@
   "Secret": "/mnt/4tb-m2/git/",
   "File": "config/clockwork/portfolio-server.toml",
   "SymlinkFile": "",
-  "Commit": "8959aba9c6a95aea528376f730302a11d2670a0e",
-  "Link": "https://github.com/casonk/tachometer/blob/8959aba9c6a95aea528376f730302a11d2670a0e/config/clockwork/portfolio-server.toml#L7",
+  "Commit": "5a6654cde6657f768d6bcbda5ff3f5db6e226253",
   "Entropy": 3.0778196,
   "Author": "casonk",
   "Email": "72440835+casonk@users.noreply.github.com",
@@ -117,7 +112,7 @@
    "local-path",
    "machine-specific"
   ],
-  "Fingerprint": "8959aba9c6a95aea528376f730302a11d2670a0e:config/clockwork/portfolio-server.toml:portfolio-git-workspace-path:7"
+  "Fingerprint": "5a6654cde6657f768d6bcbda5ff3f5db6e226253:config/clockwork/portfolio-server.toml:portfolio-git-workspace-path:7"
  },
  {
   "RuleID": "portfolio-git-workspace-path",
@@ -130,8 +125,7 @@
   "Secret": "/mnt/4tb-m2/git/",
   "File": "config/clockwork/portfolio-snapshot.toml",
   "SymlinkFile": "",
-  "Commit": "4946031b851eef5fa80911276193ecefe1d4823d",
-  "Link": "https://github.com/casonk/tachometer/blob/4946031b851eef5fa80911276193ecefe1d4823d/config/clockwork/portfolio-snapshot.toml#L6",
+  "Commit": "09d5c0fd8249ee1039c9e46a9072467eaa89958e",
   "Entropy": 3.0778196,
   "Author": "casonk",
   "Email": "72440835+casonk@users.noreply.github.com",
@@ -141,7 +135,7 @@
    "local-path",
    "machine-specific"
   ],
-  "Fingerprint": "4946031b851eef5fa80911276193ecefe1d4823d:config/clockwork/portfolio-snapshot.toml:portfolio-git-workspace-path:6"
+  "Fingerprint": "09d5c0fd8249ee1039c9e46a9072467eaa89958e:config/clockwork/portfolio-snapshot.toml:portfolio-git-workspace-path:6"
  },
  {
   "RuleID": "portfolio-git-workspace-path",
@@ -154,8 +148,7 @@
   "Secret": "/mnt/4tb-m2/git/",
   "File": "config/clockwork/portfolio-snapshot.toml",
   "SymlinkFile": "",
-  "Commit": "4946031b851eef5fa80911276193ecefe1d4823d",
-  "Link": "https://github.com/casonk/tachometer/blob/4946031b851eef5fa80911276193ecefe1d4823d/config/clockwork/portfolio-snapshot.toml#L7",
+  "Commit": "09d5c0fd8249ee1039c9e46a9072467eaa89958e",
   "Entropy": 3.0778196,
   "Author": "casonk",
   "Email": "72440835+casonk@users.noreply.github.com",
@@ -165,7 +158,7 @@
    "local-path",
    "machine-specific"
   ],
-  "Fingerprint": "4946031b851eef5fa80911276193ecefe1d4823d:config/clockwork/portfolio-snapshot.toml:portfolio-git-workspace-path:7"
+  "Fingerprint": "09d5c0fd8249ee1039c9e46a9072467eaa89958e:config/clockwork/portfolio-snapshot.toml:portfolio-git-workspace-path:7"
  },
  {
   "RuleID": "portfolio-git-workspace-path",
@@ -178,8 +171,7 @@
   "Secret": "/mnt/4tb-m2/git/",
   "File": "config/clockwork/portfolio-snapshot.toml",
   "SymlinkFile": "",
-  "Commit": "4946031b851eef5fa80911276193ecefe1d4823d",
-  "Link": "https://github.com/casonk/tachometer/blob/4946031b851eef5fa80911276193ecefe1d4823d/config/clockwork/portfolio-snapshot.toml#L20",
+  "Commit": "09d5c0fd8249ee1039c9e46a9072467eaa89958e",
   "Entropy": 3.0778196,
   "Author": "casonk",
   "Email": "72440835+casonk@users.noreply.github.com",
@@ -189,7 +181,7 @@
    "local-path",
    "machine-specific"
   ],
-  "Fingerprint": "4946031b851eef5fa80911276193ecefe1d4823d:config/clockwork/portfolio-snapshot.toml:portfolio-git-workspace-path:20"
+  "Fingerprint": "09d5c0fd8249ee1039c9e46a9072467eaa89958e:config/clockwork/portfolio-snapshot.toml:portfolio-git-workspace-path:20"
  },
  {
   "RuleID": "portfolio-git-workspace-path",
@@ -202,8 +194,7 @@
   "Secret": "/mnt/4tb-m2/git/",
   "File": "config/clockwork/portfolio-snapshot.toml",
   "SymlinkFile": "",
-  "Commit": "4946031b851eef5fa80911276193ecefe1d4823d",
-  "Link": "https://github.com/casonk/tachometer/blob/4946031b851eef5fa80911276193ecefe1d4823d/config/clockwork/portfolio-snapshot.toml#L20",
+  "Commit": "09d5c0fd8249ee1039c9e46a9072467eaa89958e",
   "Entropy": 3.0778196,
   "Author": "casonk",
   "Email": "72440835+casonk@users.noreply.github.com",
@@ -213,6 +204,6 @@
    "local-path",
    "machine-specific"
   ],
-  "Fingerprint": "4946031b851eef5fa80911276193ecefe1d4823d:config/clockwork/portfolio-snapshot.toml:portfolio-git-workspace-path:20"
+  "Fingerprint": "09d5c0fd8249ee1039c9e46a9072467eaa89958e:config/clockwork/portfolio-snapshot.toml:portfolio-git-workspace-path:20"
  }
 ]
