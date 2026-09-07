@@ -150,8 +150,10 @@ def evaluate_process(
     peak_threads = run_summary.get("avg_proc_peak_thread_count")
     major_faults = run_summary.get("avg_proc_major_faults")
     invol_ctx = run_summary.get("avg_proc_involuntary_ctx_switches")
+    fail_count = run_summary.get("fail_count", 0)
 
     lights = {
+        "run_failures": "red" if fail_count else "green",
         "proc_avg_cpu": light_max(avg_cpu, **t["proc_avg_cpu_percent"]),
         "proc_peak_cpu": light_max(peak_cpu, **t["proc_peak_cpu_percent"]),
         "proc_avg_rss": light_max(avg_rss, **t["proc_avg_memory_rss_bytes"]),
@@ -161,7 +163,8 @@ def evaluate_process(
         "proc_major_faults": light_max(major_faults, **t["proc_major_faults"]),
         "proc_invol_ctx": light_max(invol_ctx, **t["proc_involuntary_ctx_switches"]),
     }
-    overall = worst_light(lights)
+    known_lights = {key: light for key, light in lights.items() if light != "unknown"}
+    overall = worst_light(known_lights) if known_lights else "unknown"
     return {
         "metrics": {
             "avg_proc_cpu_percent": avg_cpu,

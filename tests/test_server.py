@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import json
+import zipfile
 from pathlib import Path
 
 import pytest
 
 from tachometer.server import (
+    _archive_run_log,
     _build_api_payload,
     _render_dashboard,
     _same_origin_request,
@@ -13,7 +15,59 @@ from tachometer.server import (
     gather_agent_utilization_data,
     gather_fedora_debug_data,
     gather_host_data,
+    gather_repo_data,
 )
+
+
+@pytest.mark.unit
+def test_archive_run_log_moves_existing_log(tmp_path: Path):
+    log_path = tmp_path / ".tachometer" / "run-all.log"
+    log_path.parent.mkdir()
+    log_path.write_text("previous run\n", encoding="utf-8")
+
+    archived = _archive_run_log(log_path)
+
+    assert archived is not None
+    assert archived.parent == log_path.parent / "logs"
+    assert archived.name.startswith("run-all-")
+    assert archived.read_text(encoding="utf-8") == "previous run\n"
+    assert not log_path.exists()
+
+
+@pytest.mark.unit
+def test_archive_run_log_skips_empty_log(tmp_path: Path):
+    log_path = tmp_path / ".tachometer" / "run-all.log"
+    log_path.parent.mkdir()
+    log_path.write_text("", encoding="utf-8")
+
+    archived = _archive_run_log(log_path)
+
+    assert archived is None
+    assert log_path.exists()
+
+
+@pytest.mark.unit
+def test_archive_run_log_bundles_old_archives(tmp_path: Path):
+    log_path = tmp_path / ".tachometer" / "run-all.log"
+    archive_dir = log_path.parent / "logs"
+    archive_dir.mkdir(parents=True)
+    for i in range(3):
+        (archive_dir / f"run-all-20260101T00000{i}Z.log").write_text(
+            f"old {i}\n",
+            encoding="utf-8",
+        )
+    log_path.write_text("new archive\n", encoding="utf-8")
+
+    _archive_run_log(log_path, keep=2)
+
+    archives = sorted(archive_dir.glob("run-all-*.log"))
+    assert len(archives) == 2
+    assert not (archive_dir / "run-all-20260101T000000Z.log").exists()
+    bundle_path = archive_dir / "bundles" / "run-all-20260101.zip"
+    assert bundle_path.exists()
+    with zipfile.ZipFile(bundle_path) as bundle:
+        assert "run-all-20260101T000000Z.log" in bundle.namelist()
+        assert bundle.read("run-all-20260101T000000Z.log") == b"old 0\n"
 
 
 @pytest.mark.unit
@@ -319,6 +373,49 @@ def test_gather_fedora_debug_data_loads_sidecar(tmp_path: Path):
 
 
 @pytest.mark.unit
+def test_gather_repo_data_ignores_stale_process_runs_for_no_run_repo(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    portfolio_root = tmp_path / "portfolio"
+    tachometer_root = portfolio_root / "util-repos" / "tachometer"
+    repo_root = portfolio_root / "docs-only"
+    profile_path = repo_root / ".tachometer" / "profile.json"
+    profile_path.parent.mkdir(parents=True)
+    profile_path.write_text(
+        json.dumps(
+            {
+                "runs": [
+                    {
+                        "returncode": 127,
+                        "proc_avg_cpu_percent": 1.0,
+                        "runtime_seconds": 0.01,
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr(
+        "tachometer.server._load_downstream_repos",
+        lambda _: [
+            {
+                "name": "docs-only",
+                "path": "./docs-only",
+                "no_run_reason": "No automated test suite",
+            }
+        ],
+    )
+
+    repos = gather_repo_data(tachometer_root)
+
+    docs_repo = next(repo for repo in repos if repo["name"] == "docs-only")
+    assert docs_repo["has_process"] is False
+    assert docs_repo["run_summary"] == {}
+
+
+@pytest.mark.unit
 def test_validate_bind_host_rejects_non_loopback_without_opt_in():
     try:
         _validate_bind_host("0.0.0.0", allow_remote=False)
@@ -347,3 +444,27 @@ def test_same_origin_request_requires_matching_host():
         "Origin": "http://localhost:5100",
     }
     assert _same_origin_request(mismatched) is False
+
+
+@pytest.mark.unit
+def test_same_origin_request_accepts_forwarded_proxy_host():
+    headers = {
+        "Host": "127.0.0.1:5100",
+        "X-Forwarded-Host": "tachometer.internal",
+        "X-Forwarded-Proto": "https",
+        "Origin": "https://tachometer.internal",
+    }
+
+    assert _same_origin_request(headers) is True
+
+
+@pytest.mark.unit
+def test_same_origin_request_rejects_forwarded_proto_mismatch():
+    headers = {
+        "Host": "127.0.0.1:5100",
+        "X-Forwarded-Host": "tachometer.internal",
+        "X-Forwarded-Proto": "https",
+        "Origin": "http://tachometer.internal",
+    }
+
+    assert _same_origin_request(headers) is False

@@ -3,7 +3,7 @@ name = "traction-control"
 path = "./util-repos/traction-control"
 role = "script"
 reason = "Portfolio control plane with cross-repo tooling conventions."
-no_run_reason = "Control-plane config repo — no automated test suite"
+run_command = "python3 -m pytest tests/ -q"
 
 [[repos]]
 name = "archility"
@@ -38,7 +38,7 @@ name = "fedora-debugg"
 path = "./util-repos/fedora-debugg"
 role = "script"
 reason = "Operational tooling repo that can record local snapshot baselines."
-no_run_reason = "Ops scripts — no automated test suite"
+run_command = "bash tests/run_tests.sh"
 
 [[repos]]
 name = "intake"
@@ -52,7 +52,7 @@ name = "magneto"
 path = "./util-repos/magneto"
 role = "service"
 reason = "Private Transmission web utility adopting the portfolio profiling convention."
-run_command = ".venv/bin/python -m pytest tests/ -q"
+run_command = "python3 -m pytest tests/ -q"
 
 [[repos]]
 name = "nordility"
@@ -66,7 +66,7 @@ name = "pit-box"
 path = "./util-repos/pit-box"
 role = "script"
 reason = "Ops utility repo adopting the shared profiling convention."
-no_run_reason = "Ops utility — no automated test suite"
+run_command = "./scripts/validate.sh"
 
 [[repos]]
 name = "shock-relay"
@@ -80,7 +80,7 @@ name = "short-circuit"
 path = "./util-repos/short-circuit"
 role = "script"
 reason = "WireGuard utility repo adopting the shared profiling convention."
-no_run_reason = "WireGuard config utility — no automated test suite"
+run_command = "python3 -m pytest tests/ -q"
 
 [[repos]]
 name = "snowbridge"
@@ -94,7 +94,7 @@ name = "terminility"
 path = "./util-repos/terminility"
 role = "script"
 reason = "Shell utility repo adopting the shared profiling convention."
-no_run_reason = "Shell utility — no automated test suite"
+run_command = "bash tests/run_tests.sh"
 
 # Private downstream consumers (e.g. the profiler's origin repo) are kept in the
 # gitignored config/downstream-repos.local.toml, which the loader merges when

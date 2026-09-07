@@ -14,6 +14,11 @@ should change how future sessions work in this repo.
 
 ## Lessons
 
+- Dashboard log files that are overwritten at the start of a background run
+  need rotation before opening the new log. Keep the active log stable for UI
+  tailing, keep a small number of loose archives for quick inspection, and
+  compress older logs into dated bundles so failed or long-running
+  investigations are not lost when a user retries.
 - Disk red-light backlog entries are a cross-repo automation contract. Keep
   `system.disk` and `host.disk` suggestions pointed at the shared
   traction-control disk-pressure agentic remediation job and reversible
@@ -29,6 +34,10 @@ should change how future sessions work in this repo.
 - Clockwork/systemd entries that target shell scripts should invoke them via
   `bash` or keep the execute bit under test; a missing executable bit turns
   into a `203/EXEC` unit failure even when the script body itself is fine.
+- Portfolio runner metadata streams with optional fields must use a
+  non-whitespace delimiter or a structured format; Bash `read` with whitespace
+  `IFS` collapses empty fields and can accidentally execute `no_run_reason`
+  prose as a command.
 
 - Keep repo-local manifests and examples free of machine-specific absolute
   paths; tracked profiling conventions should travel cleanly between portfolio

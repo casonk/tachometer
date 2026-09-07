@@ -755,8 +755,13 @@ def summarize_run_records(profile_path: str | Path) -> dict[str, Any]:
         if isinstance(r.get("runtime_seconds"), int | float)
     ]
 
-    # Failure stats across all runs (not just qualifying).
-    fail_count = sum(1 for r in runs if r.get("returncode", 0) != 0)
+    # Active failure stats: a later successful run clears earlier failures from
+    # the dashboard health indicator while raw history remains in profile.json.
+    fail_count = 0
+    for run in reversed(runs):
+        if run.get("returncode", 0) == 0:
+            break
+        fail_count += 1
     last_failed = next((r for r in reversed(runs) if r.get("returncode", 0) != 0), None)
     last_run = runs[-1] if runs else None
 

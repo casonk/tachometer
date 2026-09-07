@@ -7,7 +7,7 @@ portfolio_root="$(cd "$tachometer_root/../.." && pwd)"
 tachometer_src="$tachometer_root/src"
 downstream_config="$tachometer_root/config/downstream-repos.toml"
 
-# Python emits one line per repo: <abs_path>\t<run_command>\t<no_run_reason>
+# Python emits one line per repo: <abs_path><US><run_command><US><no_run_reason>
 # Empty run_command / no_run_reason fields are written as empty strings.
 _repo_lines() {
   PYTHONPATH="$tachometer_src" python3 - "$portfolio_root" "$downstream_config" <<'PYEOF'
@@ -31,10 +31,10 @@ for repo in repos:
     run_command = repo.get("run_command", "")
     no_run_reason = repo.get("no_run_reason", "")
     if path:
-        print(f"{portfolio_root / path}\t{run_command}\t{no_run_reason}")
+        print(chr(31).join((str(portfolio_root / path), run_command, no_run_reason)))
 PYEOF
   # tachometer self-profile
-  printf "%s\t%s\t\n" "$tachometer_root" "python3 -m pytest tests/ -q"
+  printf "%s\x1f%s\x1f\n" "$tachometer_root" "python3 -m pytest tests/ -q"
 }
 
 failed=0
@@ -52,7 +52,7 @@ if ! PYTHONPATH="$tachometer_src" python3 -m tachometer.cli agent-utilization --
   ((failed++)) || true
 fi
 
-while IFS=$'\t' read -r repo_dir run_cmd no_run_reason; do
+while IFS=$'\037' read -r repo_dir run_cmd no_run_reason; do
   runner="$repo_dir/scripts/run_tachometer_profile.sh"
   name="$(basename "$repo_dir")"
 

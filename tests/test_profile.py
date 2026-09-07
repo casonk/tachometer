@@ -280,3 +280,31 @@ def test_summarize_run_records_aggregates_psutil(tmp_path: Path):
     assert result["avg_proc_peak_cpu_percent"] == 60.0
     assert result["avg_proc_memory_rss_bytes"] == 200e6
     assert result["avg_proc_peak_memory_rss_bytes"] == 300e6
+
+
+@pytest.mark.unit
+def test_summarize_run_records_clears_failure_count_after_success(tmp_path: Path):
+    profile_path = tmp_path / "profile.json"
+    runs = [
+        {
+            "started_at": 1.0,
+            "returncode": 127,
+            "proc_avg_cpu_percent": 1.0,
+            "runtime_seconds": 0.01,
+        },
+        {
+            "started_at": 2.0,
+            "returncode": 0,
+            "proc_avg_cpu_percent": 2.0,
+            "runtime_seconds": 0.02,
+        },
+    ]
+    profile_path.write_text(json.dumps({"samples": [], "runs": runs}), encoding="utf-8")
+
+    result = summarize_run_records(profile_path)
+
+    assert result["run_count"] == 2
+    assert result["qualifying_run_count"] == 2
+    assert result["fail_count"] == 0
+    assert result["last_returncode"] == 0
+    assert result["last_failed_returncode"] == 127
