@@ -21,7 +21,8 @@ import json
 import subprocess
 import threading
 import time
-from datetime import datetime, timedelta
+import zipfile
+from datetime import datetime, timedelta, timezone
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 from typing import Any
@@ -63,6 +64,54 @@ _RUN_STATE: dict[str, Any] = {
     "log_path": None,
 }
 
+_RUN_LOG_ARCHIVE_COUNT = 10
+
+
+def _run_log_bundle_path(archive_dir: Path, archived_log: Path) -> Path:
+    date_part = archived_log.stem.split("-", 2)[-1][:8]
+    if len(date_part) != 8 or not date_part.isdigit():
+        date_part = datetime.fromtimestamp(archived_log.stat().st_mtime, timezone.utc).strftime(
+            "%Y%m%d"
+        )
+    return archive_dir / "bundles" / f"run-all-{date_part}.zip"
+
+
+def _bundle_old_run_logs(archive_dir: Path, *, keep: int = _RUN_LOG_ARCHIVE_COUNT) -> None:
+    if keep <= 0:
+        old_logs = sorted(archive_dir.glob("run-all-*.log"))
+    else:
+        old_logs = sorted(archive_dir.glob("run-all-*.log"))[:-keep]
+    if not old_logs:
+        return
+
+    bundle_dir = archive_dir / "bundles"
+    bundle_dir.mkdir(parents=True, exist_ok=True)
+    for old_log in old_logs:
+        bundle_path = _run_log_bundle_path(archive_dir, old_log)
+        with zipfile.ZipFile(bundle_path, "a", compression=zipfile.ZIP_DEFLATED) as bundle:
+            if old_log.name not in bundle.namelist():
+                bundle.write(old_log, arcname=old_log.name)
+        old_log.unlink()
+
+
+def _archive_run_log(log_path: Path, *, keep: int = _RUN_LOG_ARCHIVE_COUNT) -> Path | None:
+    """Move the previous dashboard run log into loose archives and bundle older logs."""
+    if not log_path.exists() or log_path.stat().st_size == 0:
+        return None
+
+    archive_dir = log_path.parent / "logs"
+    archive_dir.mkdir(parents=True, exist_ok=True)
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    archive_path = archive_dir / f"{log_path.stem}-{stamp}{log_path.suffix}"
+    counter = 1
+    while archive_path.exists():
+        archive_path = archive_dir / f"{log_path.stem}-{stamp}-{counter}{log_path.suffix}"
+        counter += 1
+    log_path.replace(archive_path)
+
+    _bundle_old_run_logs(archive_dir, keep=keep)
+    return archive_path
+
 
 def _is_loopback_host(host: str) -> bool:
     candidate = host.strip()
@@ -87,14 +136,34 @@ def _validate_bind_host(host: str, *, allow_remote: bool) -> None:
 
 
 def _same_origin_request(headers: Any) -> bool:
-    host = str(headers.get("Host", "")).strip()
-    if not host:
-        return False
     source = str(headers.get("Origin") or headers.get("Referer") or "").strip()
     if not source:
         return False
     parsed = urlparse(source)
-    return bool(parsed.scheme and parsed.netloc and parsed.netloc == host)
+    if not parsed.scheme or not parsed.netloc:
+        return False
+    for scheme, netloc in _accepted_origin_targets(headers):
+        if parsed.netloc != netloc:
+            continue
+        if scheme and parsed.scheme != scheme:
+            continue
+        return True
+    return False
+
+
+def _accepted_origin_targets(headers: Any) -> tuple[tuple[str, str], ...]:
+    targets: list[tuple[str, str]] = []
+    host = _first_header_value(headers.get("Host", ""))
+    if host:
+        targets.append(("", host))
+    forwarded_host = _first_header_value(headers.get("X-Forwarded-Host", ""))
+    if forwarded_host:
+        targets.append((_first_header_value(headers.get("X-Forwarded-Proto", "")), forwarded_host))
+    return tuple(dict.fromkeys(targets))
+
+
+def _first_header_value(value: object) -> str:
+    return str(value or "").split(",", 1)[0].strip()
 
 
 def _start_snapshot_run(tachometer_root: Path) -> bool:
@@ -112,6 +181,7 @@ def _start_snapshot_run(tachometer_root: Path) -> bool:
 
     log_path = tachometer_root / ".tachometer" / "run-all.log"
     log_path.parent.mkdir(parents=True, exist_ok=True)
+    _archive_run_log(log_path)
     _RUN_STATE["log_path"] = log_path
     script = tachometer_root / "scripts" / "run_all_tachometer_snapshots.sh"
 
@@ -199,7 +269,7 @@ def gather_repo_data(tachometer_root: Path) -> list[dict[str, Any]]:
         stoplight_delta = evaluate_delta(delta_summary) if has_delta else {}
 
         # Process stoplight — from psutil run records in profile.json
-        run_summary = summarize_run_records(profile_path)
+        run_summary = summarize_run_records(profile_path) if repo.get("run_command") else {}
         has_process = run_summary.get("qualifying_run_count", 0) > 0
         stoplight_process = evaluate_process(run_summary) if has_process else {}
 

@@ -127,6 +127,11 @@ tachometer serve --manifest config/tachometer/profile.toml --host 127.0.0.1 --po
 ```
 
 Non-loopback binds are blocked unless you pass `--allow-remote` explicitly.
+Dashboard-triggered `Run All Snapshots` writes the active run to
+`.tachometer/run-all.log`; before a new run starts, the previous non-empty log
+is archived under `.tachometer/logs/run-all-<timestamp>.log`. The 10 newest
+archives stay loose for quick inspection; older archives are compressed into
+date-based bundles under `.tachometer/logs/bundles/run-all-YYYYMMDD.zip`.
 
 If `fedora-debugg` has exported `artifacts/latest/tachometer-signals.json`,
 the dashboard also renders a separate Fedora Debug strip with snapshot age plus
