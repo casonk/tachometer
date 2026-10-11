@@ -100,7 +100,13 @@ def test_latest_status_takes_the_worst_light_and_reports_age():
 
     assert status["overall"] == "red"
     assert status["age_seconds"] == 60
-    assert [r["light"] for r in status["readings"]] == ["red", "green", "yellow", "green"]
+    assert [r["light"] for r in status["readings"]] == [
+        "red",
+        "green",
+        "yellow",
+        "green",
+        "unknown",
+    ]
     assert thermal.latest_status([]) == {
         "has_data": False,
         "readings": [],
@@ -248,3 +254,95 @@ def test_page_labels_hourly_ranges_as_such(tmp_path):
     assert 'href="/thermal?range=30d"' in page
     assert "__" not in page.split("<script>")[0]
     assert "hourly maximum" not in thermal.render_page(tmp_path, "24h", now=1060)
+
+
+def _smart_file(directory: Path, name: str, *snapshots: dict) -> None:
+    directory.mkdir(parents=True, exist_ok=True)
+    (directory / f"{name}.jsonl").write_text(
+        "".join(json.dumps(s) + "\n" for s in snapshots), encoding="utf-8"
+    )
+
+
+def _snap(when: str, *, temp=40, serial="S1", kind="ata", passed=True, **counters) -> dict:
+    return {
+        "taken_at": when,
+        "kind": kind,
+        "serial": serial,
+        "health_passed": passed,
+        "temperature_c": temp,
+        "counters": counters,
+    }
+
+
+NOW = 1791720000.0  # 2026-10-11T12:40:00+00:00
+
+
+def test_read_smart_takes_the_latest_fresh_snapshot_and_flags_rising_counters(tmp_path):
+    smart = tmp_path / "smart"
+    _smart_file(
+        smart,
+        "ssd",
+        _snap("2026-10-11T11:00:00+00:00", temp=58, bad_blocks=1187),
+        _snap("2026-10-11T12:00:00+00:00", temp=71, bad_blocks=1188),
+    )
+    _smart_file(smart, "nvme", _snap("2026-10-11T12:10:00+00:00", temp=67, kind="nvme"))
+    _smart_file(smart, "stale", _snap("2026-10-10T01:00:00+00:00", temp=99))
+    _smart_file(
+        smart,
+        "swapped",
+        _snap("2026-10-11T11:00:00+00:00", serial="OLD", errors=50),
+        _snap("2026-10-11T12:00:00+00:00", serial="NEW", errors=60),
+    )
+    (smart / "broken.jsonl").write_text("not json\n", encoding="utf-8")
+
+    result = thermal.read_smart(smart, now=NOW)
+
+    assert sorted(result) == ["nvme", "ssd", "swapped"]
+    assert result["ssd"]["temp"] == 71.0 and result["ssd"]["rose"] == ["bad_blocks"]
+    assert result["ssd"]["kind"] == "disk" and result["nvme"]["kind"] == "nvme"
+    assert result["swapped"]["rose"] == [], "a replaced drive starts a new trend"
+    assert thermal.read_smart(tmp_path / "absent", now=NOW) == {}
+
+
+def test_collect_sample_merges_smart_temperatures_with_kernel_readings(tmp_path):
+    smart = tmp_path / "smart"
+    _smart_file(smart, "ssd", _snap("2026-10-11T12:30:00+00:00", temp=71))
+    sysfs = _fake_sysfs(tmp_path / "sys")
+
+    sample = thermal.collect_sample(sysfs, now=NOW, gpu_reader=lambda: None, smart_dir=smart)
+
+    assert sample["drives"]["smart-disk:ssd"] == 71.0
+    assert sample["drive_max"] == 71.0  # hotter than either kernel reading
+    assert thermal.drive_light(sample["drives"]) == "red"
+    # 71 C through SMART on an NVMe drive would only be a "watch".
+    assert thermal.drive_light({"smart-nvme:x": 71.0}) == "yellow"
+
+
+def test_drive_health_light_and_reason():
+    ok = {"a": {"health_passed": True, "rose": []}}
+    assert thermal.drive_health({}) == {"light": "unknown", "detail": "No SMART data"}
+    assert thermal.drive_health(ok)["light"] == "green"
+    rising = ok | {"b": {"health_passed": True, "rose": ["pending_sectors"]}}
+    assert thermal.drive_health(rising) == {"light": "yellow", "detail": "Fault counter rose: b"}
+    failing = rising | {"c": {"health_passed": False, "rose": []}}
+    assert thermal.drive_health(failing) == {"light": "red", "detail": "SMART failed: c"}
+
+
+def test_drive_health_reaches_the_status_and_the_page(tmp_path):
+    path = thermal.samples_path(tmp_path)
+    thermal.append_sample(
+        path,
+        {
+            "ts": 1000,
+            "cpu": 40.0,
+            "drives": {},
+            "smart": {"ssd": {"health_passed": True, "rose": ["bad_blocks"], "kind": "disk"}},
+        },
+    )
+
+    status = thermal.build_payload(tmp_path, "24h", now=1060)["status"]
+    assert status["readings"][-1]["label"] == "Drive health"
+    assert status["readings"][-1]["light"] == "yellow" and status["overall"] == "yellow"
+
+    page = thermal.render_page(tmp_path, "24h", now=1060)
+    assert "Drive health" in page and "Fault counter rose: ssd" in page
