@@ -72,6 +72,18 @@ def _snapshot(args: argparse.Namespace) -> int:
     return 0
 
 
+def _sample_host(args: argparse.Namespace) -> int:
+    from . import thermal
+
+    manifest = load_manifest(args.manifest)
+    path = thermal.samples_path(manifest.repo_root)
+    sample = thermal.collect_sample()
+    keep_days = args.keep_days if args.keep_days else thermal.DEFAULT_KEEP_DAYS
+    kept = thermal.append_sample(path, sample, keep_days=keep_days)
+    print(json.dumps({"path": str(path), "kept": kept, "sample": sample}, sort_keys=True))
+    return 0
+
+
 def _host_snapshot(args: argparse.Namespace) -> int:
     manifest = load_manifest(args.manifest)
     s = settings_path(args.manifest)
@@ -193,6 +205,19 @@ def build_parser() -> argparse.ArgumentParser:
     host_snapshot_parser.add_argument("--label", default=None)
     host_snapshot_parser.add_argument("--phase", default="snapshot")
     host_snapshot_parser.set_defaults(func=_host_snapshot)
+
+    sample_host_parser = subparsers.add_parser(
+        "sample-host",
+        help="Append one host temperature and load sample to the thermal history",
+    )
+    sample_host_parser.add_argument("--manifest", required=True)
+    sample_host_parser.add_argument(
+        "--keep-days",
+        type=float,
+        default=None,
+        help="Days of samples to keep (default: 14).",
+    )
+    sample_host_parser.set_defaults(func=_sample_host)
 
     agent_utilization_parser = subparsers.add_parser(
         "agent-utilization",

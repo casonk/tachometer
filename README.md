@@ -120,6 +120,15 @@ Capture the local AI-provider utilization snapshot used by the dashboard:
 tachometer agent-utilization --manifest config/tachometer/profile.toml
 ```
 
+Record one host temperature and load sample for the thermal history (meant
+to run every five minutes; see `config/clockwork/host-sampler.toml.template`):
+
+```bash
+bash scripts/sample_host.sh
+```
+
+The dashboard charts the history at `/thermal`.
+
 Serve the dashboard on loopback only:
 
 ```bash
