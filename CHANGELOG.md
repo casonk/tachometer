@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- The host sampler now reads SMART history when it is available. If
+  `/var/lib/smart-collector/smart/*.jsonl` exists (written by smart-collector's
+  root timer; override with `TACHOMETER_SMART_DIR`), each sample includes the
+  latest fresh SMART temperature per drive alongside the kernel's readings, and
+  `/thermal` shows a Drive health chip: red when a drive fails its SMART
+  health check, yellow when a fault counter rose since the previous snapshot.
+  Snapshots older than three hours are ignored. The sampler still needs no
+  root; it only reads.
 - Thermal history retention is now tiered. Five-minute samples are kept for 30
   days (was 14); older ones are folded into one record per hour (minimum, mean,
   maximum) in `.tachometer/host-samples-hourly.jsonl` and kept for 90 days.

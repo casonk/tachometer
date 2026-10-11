@@ -20,6 +20,7 @@ import os
 import shutil
 import subprocess
 import time
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -135,16 +136,109 @@ def _read_gpu_temp() -> float | None:
     return None
 
 
+# Where smart-collector's root timer writes one JSON-lines history per drive.
+# This module only ever reads it; SMART itself needs root and the sampler
+# deliberately has none.
+DEFAULT_SMART_DIR = Path("/var/lib/smart-collector/smart")
+# The SMART timer is hourly. Past this age a snapshot says nothing about now.
+SMART_MAX_AGE_SECONDS = 3 * 3600
+
+
+def _smart_dir() -> Path:
+    return Path(os.environ.get("TACHOMETER_SMART_DIR") or DEFAULT_SMART_DIR)
+
+
+def _last_lines(path: Path, count: int = 2) -> list[dict[str, Any]]:
+    """The last `count` JSON objects in a JSON-lines file, oldest first."""
+    records: list[dict[str, Any]] = []
+    with contextlib.suppress(Exception):
+        with path.open("rb") as handle:
+            handle.seek(0, os.SEEK_END)
+            handle.seek(max(0, handle.tell() - 16384))
+            tail = handle.read().decode("utf-8", errors="replace")
+        for line in tail.splitlines()[-count:]:
+            with contextlib.suppress(Exception):
+                record = json.loads(line)
+                if isinstance(record, dict):
+                    records.append(record)
+    return records
+
+
+def _snapshot_epoch(snapshot: dict[str, Any]) -> float | None:
+    with contextlib.suppress(Exception):
+        return datetime.fromisoformat(str(snapshot["taken_at"])).timestamp()
+    return None
+
+
+def read_smart(smart_dir: Path, *, now: float) -> dict[str, dict[str, Any]]:
+    """Latest fresh SMART snapshot per drive, reduced to what the page needs.
+
+    `rose` lists fault counters that increased since the previous snapshot of
+    the same physical drive. A drive whose newest snapshot is stale is left
+    out entirely rather than shown with old numbers.
+    """
+    drives: dict[str, dict[str, Any]] = {}
+    for path in sorted(smart_dir.glob("*.jsonl")) if smart_dir.is_dir() else []:
+        history = _last_lines(path)
+        if not history:
+            continue
+        latest = history[-1]
+        taken = _snapshot_epoch(latest)
+        if taken is None or now - taken > SMART_MAX_AGE_SECONDS:
+            continue
+        rose: list[str] = []
+        if len(history) == 2 and history[0].get("serial") == latest.get("serial"):
+            before = history[0].get("counters") or {}
+            for name, value in sorted((latest.get("counters") or {}).items()):
+                earlier = before.get(name)
+                if isinstance(value, int) and isinstance(earlier, int) and value > earlier:
+                    rose.append(name)
+        temp = latest.get("temperature_c")
+        drives[path.stem] = {
+            "kind": "nvme" if latest.get("kind") == "nvme" else "disk",
+            "temp": float(temp) if isinstance(temp, int | float) else None,
+            "health_passed": latest.get("health_passed"),
+            "rose": rose,
+            "age_seconds": int(now - taken),
+        }
+    return drives
+
+
+def drive_health(smart: dict[str, dict[str, Any]]) -> dict[str, str]:
+    """One light for drive health, with the reason in words."""
+    if not smart:
+        return {"light": "unknown", "detail": "No SMART data"}
+    failed = sorted(name for name, d in smart.items() if d.get("health_passed") is False)
+    if failed:
+        return {"light": "red", "detail": "SMART failed: " + ", ".join(failed)}
+    rising = sorted(name for name, d in smart.items() if d.get("rose"))
+    if rising:
+        return {"light": "yellow", "detail": "Fault counter rose: " + ", ".join(rising)}
+    return {"light": "green", "detail": f"{len(smart)} drive(s) healthy"}
+
+
 def collect_sample(
-    sys_class: Path = Path("/sys/class"), *, now: float | None = None, gpu_reader=_read_gpu_temp
+    sys_class: Path = Path("/sys/class"),
+    *,
+    now: float | None = None,
+    gpu_reader=_read_gpu_temp,
+    smart_dir: Path | None = None,
 ) -> dict[str, Any]:
     """One reading of everything the page charts. Missing sensors are None."""
+    stamp = now if now is not None else time.time()
     load = None
     with contextlib.suppress(Exception):
         load = round(os.getloadavg()[0] / (os.cpu_count() or 1), 3)
     drives = _read_drive_temps(sys_class)
+    smart = read_smart(smart_dir if smart_dir is not None else _smart_dir(), now=stamp)
+    for name, drive in smart.items():
+        # SMART temperatures sit beside the kernel's, under their own prefix,
+        # so the hottest reading wins whichever source it came from.
+        if drive["temp"] is not None:
+            drives[f"smart-{drive['kind']}:{name}"] = drive["temp"]
     return {
-        "ts": int(now if now is not None else time.time()),
+        "smart": smart,
+        "ts": int(stamp),
         "load": load,
         "cpu": _read_cpu_temp(sys_class),
         "gpu": gpu_reader(),
@@ -275,7 +369,8 @@ def drive_light(drives: dict[str, float]) -> str:
     """Worst light across drives, each judged against the limit for its kind."""
     worst = "unknown"
     for key, temp in drives.items():
-        light = light_for("nvme" if key.startswith("nvme:") else "disk", temp)
+        is_nvme = key.startswith(("nvme:", "smart-nvme:"))
+        light = light_for("nvme" if is_nvme else "disk", temp)
         if _LIGHT_RANK[light] > _LIGHT_RANK[worst]:
             worst = light
     return worst
@@ -300,6 +395,10 @@ def latest_status(samples: list[dict[str, Any]], *, now: float | None = None) ->
             "light": drive_light(last.get("drives") or {}),
         },
     ]
+    health = drive_health(last.get("smart") or {})
+    readings.append(
+        {"label": "Drive health", "value": None, "light": health["light"], "text": health["detail"]}
+    )
     overall = max((r["light"] for r in readings), key=_LIGHT_RANK.__getitem__)
     return {
         "has_data": True,
@@ -467,12 +566,18 @@ def render_page(tachometer_root: Path, range_key: str = "24h", *, now: float | N
     status = payload["status"]
     chips = []
     for reading in status["readings"]:
-        value = "–" if reading["value"] is None else f"{reading['value']:.0f}°C"
         light = reading["light"]
+        if "text" in reading:
+            # A status reading: the headline is the verdict, the detail says why.
+            value = _LIGHT_WORD[light] if light != "red" else "Failing"
+            note = html.escape(reading["text"])
+        else:
+            value = "–" if reading["value"] is None else f"{reading['value']:.0f}°C"
+            note = _LIGHT_WORD[light]
         chips.append(
             f'<div class="chip"><div class="k">{html.escape(reading["label"])}</div>'
             f'<div class="v">{value}</div><div class="s"><span class="dot {light}"></span>'
-            f"{_LIGHT_ICON[light]} {_LIGHT_WORD[light]}</div></div>"
+            f"{_LIGHT_ICON[light]} {note}</div></div>"
         )
     if not chips:
         chips.append(
