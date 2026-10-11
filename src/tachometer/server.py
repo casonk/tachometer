@@ -1766,6 +1766,7 @@ def _render_dashboard(
 <div class="sub">
   Portfolio resource monitor &middot; auto-refreshes every 60 s &middot;
   <a href="/api/status">JSON API</a> &middot;
+  <a href="/thermal">Thermal history</a> &middot;
   <a href="/admin">Admin</a>
 </div>
 <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;flex-wrap:wrap;gap:8px">
@@ -1897,6 +1898,20 @@ class _Handler(BaseHTTPRequestHandler):
                 ),
                 "application/json",
             )
+            return
+
+        if parsed.path in ("/thermal", "/api/thermal"):
+            from . import thermal
+
+            range_key = qs.get("range", ["24h"])[0]
+            root = self.__class__.tachometer_root
+            if parsed.path == "/thermal":
+                self._send(thermal.render_page(root, range_key))
+            else:
+                self._send(
+                    json.dumps(thermal.build_payload(root, range_key), indent=2),
+                    "application/json",
+                )
             return
 
         if parsed.path == "/admin":
