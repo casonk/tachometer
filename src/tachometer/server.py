@@ -484,6 +484,21 @@ def _badge(light: str) -> str:
     )
 
 
+# (yellow at or above, red at or above) in Celsius. Deliberately generic:
+# sustained operation above the yellow line is worth a look on any desktop
+# part, and the red line sits a little under typical throttle points.
+_CPU_TEMP_LIMITS = (80.0, 90.0)
+_GPU_TEMP_LIMITS = (78.0, 85.0)
+
+
+def _temperature_light(value: float, yellow_at: float, red_at: float) -> str:
+    if value >= red_at:
+        return "red"
+    if value >= yellow_at:
+        return "yellow"
+    return "green"
+
+
 def _banner_metric(label: str, value: str, light: str) -> str:
     c = _LIGHT_COLOR.get(light, "#94a3b8")
     return (
@@ -552,9 +567,15 @@ def _render_host_banner(host: dict[str, Any]) -> str:
         _banner_metric("Procs", f"{int(procs):,}" if procs is not None else "—", "unknown"),
     ]
     if temp is not None:
-        chips.append(_banner_metric("CPU°C", f"{temp:.0f}°C", "unknown"))
+        chips.append(
+            _banner_metric("CPU°C", f"{temp:.0f}°C", _temperature_light(temp, *_CPU_TEMP_LIMITS))
+        )
     if gpu_temp is not None:
-        chips.append(_banner_metric("GPU°C", f"{gpu_temp:.0f}°C", "unknown"))
+        chips.append(
+            _banner_metric(
+                "GPU°C", f"{gpu_temp:.0f}°C", _temperature_light(gpu_temp, *_GPU_TEMP_LIMITS)
+            )
+        )
     if gpu_fan is not None:
         chips.append(_banner_metric("GPU Fan", f"{gpu_fan:.0f}%", "unknown"))
     if fan_rpm is not None:
