@@ -308,3 +308,44 @@ def test_summarize_run_records_clears_failure_count_after_success(tmp_path: Path
     assert result["fail_count"] == 0
     assert result["last_returncode"] == 0
     assert result["last_failed_returncode"] == 127
+
+
+from tachometer.profile import _read_cpu_temp  # noqa: E402
+
+
+def _zone(root, index, zone_type, millidegrees):
+    zone = root / "thermal" / f"thermal_zone{index}"
+    zone.mkdir(parents=True)
+    (zone / "type").write_text(zone_type + "\n", encoding="utf-8")
+    (zone / "temp").write_text(f"{millidegrees}\n", encoding="utf-8")
+
+
+def _hwmon(root, index, name, millidegrees):
+    chip = root / "hwmon" / f"hwmon{index}"
+    chip.mkdir(parents=True)
+    (chip / "name").write_text(name + "\n", encoding="utf-8")
+    (chip / "temp1_input").write_text(f"{millidegrees}\n", encoding="utf-8")
+
+
+def test_cpu_temp_uses_the_package_zone_not_the_first_zone(tmp_path):
+    # The layout that hid a 98 C processor behind a 28 C board sensor.
+    _zone(tmp_path, 0, "acpitz", 27800)
+    _zone(tmp_path, 1, "x86_pkg_temp", 98000)
+
+    assert _read_cpu_temp(tmp_path) == 98.0
+
+
+def test_cpu_temp_falls_back_to_a_cpu_hwmon_chip(tmp_path):
+    _zone(tmp_path, 0, "acpitz", 27800)
+    _hwmon(tmp_path, 0, "nvme", 60000)
+    _hwmon(tmp_path, 1, "coretemp", 71000)
+
+    assert _read_cpu_temp(tmp_path) == 71.0
+
+
+def test_cpu_temp_is_unknown_rather_than_an_unrelated_sensor(tmp_path):
+    _zone(tmp_path, 0, "acpitz", 27800)
+    _hwmon(tmp_path, 0, "nvme", 60000)
+
+    assert _read_cpu_temp(tmp_path) is None
+    assert _read_cpu_temp(tmp_path / "absent") is None

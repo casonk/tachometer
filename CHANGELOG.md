@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- Fixed the CPU temperature reading. `_read_cpu_temp` returned the first
+  thermal zone with a value, which on many desktops is the ACPI board sensor
+  (`acpitz`) and sits near room temperature while the processor is at its
+  limit. It now reads only a zone or hwmon chip that names the CPU package
+  (`x86_pkg_temp`, `coretemp`, `k10temp`, ...) and reports no value rather than
+  an unrelated sensor.
+- The host banner now colours CPU and GPU temperature (yellow from 80 C / 78 C,
+  red from 90 C / 85 C) instead of always showing them as neutral.
 - Documented what `tachometer` can actually measure per platform. The README
   now carries a signal-by-signal table: Linux is the reference platform, macOS
   loses every `/proc` and `/sys` signal, and Windows additionally loses
