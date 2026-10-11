@@ -1,0 +1,32 @@
+# Host temperature and load sampler: one small reading every five minutes,
+# charted on the dashboard's /thermal page.
+#
+# Replace __REPO_ROOT__ with the local tachometer checkout path, then install
+# through the shared scheduler:
+#   clockwork install --manifest <rendered file> --target systemd-user
+#
+# The job reads sysfs and nvidia-smi only and needs no privileges. If a job
+# guard is in use, mark this unit light or exempt: it is the thing that
+# observes a hot machine, so it must not be held back by one.
+
+[[jobs]]
+name = "tachometer-host-sampler"
+description = "Sample host temperatures, fans and load for the thermal history"
+scope = "user"
+service_type = "oneshot"
+working_directory = "__REPO_ROOT__"
+exec_start = "/usr/bin/env bash __REPO_ROOT__/scripts/sample_host.sh"
+standard_output = "journal"
+standard_error = "journal"
+timer_description = "Sample host temperatures every five minutes"
+
+[jobs.timer]
+kind = "calendar"
+on_calendar = "*:0/5"
+persistent = false
+accuracy_sec = "30"
+
+[jobs.cron]
+expression = "*/5 * * * *"
+command = "/usr/bin/env bash __REPO_ROOT__/scripts/sample_host.sh >/dev/null 2>&1"
+comments = ["Samples host temperatures every five minutes."]

@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- Added a host thermal history. `tachometer sample-host` (wrapper
+  `scripts/sample_host.sh`, timer template
+  `config/clockwork/host-sampler.toml.template`) appends CPU, GPU, board and
+  per-drive temperatures, fan speed and load to
+  `.tachometer/host-samples.jsonl` every five minutes and keeps 14 days. The
+  dashboard serves it at `/thermal` (and `/api/thermal`) as a time series with a
+  crosshair readout, 6h/24h/7d ranges, a table view, and a stoplight per
+  reading. Everything is read without root; SATA drive temperatures need the
+  kernel's `drivetemp` module.
 - Fixed the CPU temperature reading. `_read_cpu_temp` returned the first
   thermal zone with a value, which on many desktops is the ACPI board sensor
   (`acpitz`) and sits near room temperature while the processor is at its
