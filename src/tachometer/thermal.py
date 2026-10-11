@@ -26,8 +26,16 @@ from typing import Any
 from .profile import _read_cpu_temp
 
 SAMPLES_NAME = "host-samples.jsonl"
-DEFAULT_KEEP_DAYS = 14
-RANGES = {"6h": 6, "24h": 24, "7d": 168}
+HOURLY_NAME = "host-samples-hourly.jsonl"
+# Full five-minute samples are kept for a month. Older ones are folded into
+# one record per hour (minimum, mean, maximum) and kept for a quarter.
+DEFAULT_KEEP_DAYS = 30
+DEFAULT_AGGREGATE_DAYS = 90
+RANGES = {"6h": 6, "24h": 24, "7d": 168, "30d": 720, "90d": 2160}
+# Ranges long enough that five-minute points stop being readable are drawn
+# from hourly buckets instead.
+HOURLY_RANGES = ("30d", "90d")
+_FIELDS = ("cpu", "gpu", "board", "drive_max", "load", "fan_max")
 
 # (yellow at or above, red at or above), Celsius. Generic desktop guidance:
 # yellow is "worth a look if sustained", red sits a little under the point
@@ -163,18 +171,104 @@ def load_samples(path: Path, *, since: float | None = None) -> list[dict[str, An
     return samples
 
 
-def append_sample(
-    path: Path, sample: dict[str, Any], *, keep_days: float = DEFAULT_KEEP_DAYS
-) -> int:
-    """Append one sample and drop anything older than `keep_days`. Returns the count kept."""
-    cutoff = sample["ts"] - keep_days * 86400
-    kept = [s for s in load_samples(path) if s["ts"] >= cutoff]
-    kept.append(sample)
+def hourly_path(tachometer_root: Path) -> Path:
+    return Path(tachometer_root) / ".tachometer" / HOURLY_NAME
+
+
+def _fold(bucket: dict[str, Any], sample: dict[str, Any]) -> None:
+    """Merge one raw sample into an hourly bucket, field by field."""
+    bucket["n"] = bucket.get("n", 0) + 1
+    for name in _FIELDS:
+        value = sample.get(name)
+        if not isinstance(value, int | float) or isinstance(value, bool):
+            continue
+        stat = bucket.setdefault(name, {"min": value, "max": value, "sum": 0.0, "n": 0})
+        stat["min"] = min(stat["min"], value)
+        stat["max"] = max(stat["max"], value)
+        stat["sum"] = round(stat["sum"] + value, 3)
+        stat["n"] += 1
+
+
+def _hour(ts: float) -> int:
+    return int(ts) - int(ts) % 3600
+
+
+def fold_into_hourly(
+    buckets: dict[int, dict[str, Any]], samples: list[dict[str, Any]]
+) -> dict[int, dict[str, Any]]:
+    for sample in samples:
+        _fold(buckets.setdefault(_hour(sample["ts"]), {"ts": _hour(sample["ts"])}), sample)
+    return buckets
+
+
+def load_hourly(path: Path) -> dict[int, dict[str, Any]]:
+    return {int(b["ts"]): b for b in load_samples(path)}
+
+
+def _write_lines(path: Path, records: list[dict[str, Any]]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_suffix(path.suffix + ".tmp")
-    tmp.write_text("".join(json.dumps(s, sort_keys=True) + "\n" for s in kept), encoding="utf-8")
+    tmp.write_text("".join(json.dumps(r, sort_keys=True) + "\n" for r in records), encoding="utf-8")
     os.replace(tmp, path)
+
+
+def append_sample(
+    path: Path,
+    sample: dict[str, Any],
+    *,
+    keep_days: float = DEFAULT_KEEP_DAYS,
+    aggregate_days: float = DEFAULT_AGGREGATE_DAYS,
+) -> int:
+    """Append one sample; age older samples into hourly records.
+
+    Samples older than `keep_days` leave the raw file and are folded into
+    `host-samples-hourly.jsonl`, whose records are dropped after
+    `aggregate_days`. The hourly file is written first, so a crash between the
+    two writes can at worst count a few samples twice in one hour, never lose
+    them. Returns the number of raw samples kept.
+    """
+    cutoff = sample["ts"] - keep_days * 86400
+    existing = load_samples(path)
+    expired = [s for s in existing if s["ts"] < cutoff]
+    kept = [s for s in existing if s["ts"] >= cutoff]
+    kept.append(sample)
+
+    hourly_file = path.with_name(HOURLY_NAME)
+    if expired or hourly_file.exists():
+        buckets = fold_into_hourly(load_hourly(hourly_file), expired)
+        oldest = sample["ts"] - aggregate_days * 86400
+        pruned = [b for ts, b in sorted(buckets.items()) if ts >= _hour(oldest)]
+        if expired or len(pruned) != len(buckets):
+            _write_lines(hourly_file, pruned)
+    _write_lines(path, kept)
     return len(kept)
+
+
+def hourly_series(
+    raw: list[dict[str, Any]], stored: dict[int, dict[str, Any]], *, since: float
+) -> list[dict[str, Any]]:
+    """One point per hour from stored hourly records plus the raw window.
+
+    Temperatures and fan speed report the hour's maximum, because a peak is
+    what matters for heat and an average hides it. Load reports the mean.
+    """
+    buckets = {ts: json.loads(json.dumps(b)) for ts, b in stored.items()}
+    fold_into_hourly(buckets, raw)
+    points = []
+    for ts, bucket in sorted(buckets.items()):
+        if ts < _hour(since):
+            continue
+        point: dict[str, Any] = {"ts": ts}
+        for name in _FIELDS:
+            stat = bucket.get(name)
+            if not stat or not stat.get("n"):
+                point[name] = None
+            elif name == "load":
+                point[name] = round(stat["sum"] / stat["n"], 3)
+            else:
+                point[name] = stat["max"]
+        points.append(point)
+    return points
 
 
 def drive_light(drives: dict[str, float]) -> str:
@@ -222,16 +316,20 @@ def build_payload(
 ) -> dict:
     range_key = range_key if range_key in RANGES else "24h"
     now = now if now is not None else time.time()
+    since = now - RANGES[range_key] * 3600
     all_samples = load_samples(samples_path(tachometer_root))
-    window = [s for s in all_samples if s["ts"] >= now - RANGES[range_key] * 3600]
+    if range_key in HOURLY_RANGES:
+        resolution = "hourly"
+        points = hourly_series(all_samples, load_hourly(hourly_path(tachometer_root)), since=since)
+    else:
+        resolution = "5min"
+        points = [{k: s.get(k) for k in ("ts", *_FIELDS)} for s in all_samples if s["ts"] >= since]
     return {
         "range": range_key,
+        "resolution": resolution,
         "limits": LIMITS,
         "status": latest_status(all_samples, now=now),
-        "samples": [
-            {k: s.get(k) for k in ("ts", "load", "cpu", "gpu", "board", "drive_max", "fan_max")}
-            for s in window
-        ],
+        "samples": points,
     }
 
 
@@ -291,12 +389,12 @@ summary{cursor:pointer;color:var(--ink2);font-size:.8rem}
 <div class="chips">__CHIPS__</div>
 <div class="filters" role="navigation" aria-label="Time range">__FILTERS__</div>
 <div class="card"><h2>Temperature</h2>
- <div class="sub" style="margin:0">Degrees Celsius, one sample about every five minutes</div>
+ <div class="sub" style="margin:0">Degrees Celsius, __TEMP_NOTE__</div>
  <div class="legend" id="legend"></div><div id="temp"></div><div class="tip" id="tip-temp"></div></div>
 <div class="card"><h2>Load per CPU thread</h2>
- <div class="sub" style="margin:0">1-minute load average divided by thread count; 1.0 is fully busy</div>
+ <div class="sub" style="margin:0">1-minute load average divided by thread count; 1.0 is fully busy__LOAD_NOTE__</div>
  <div id="load"></div><div class="tip" id="tip-load"></div></div>
-<details class="card"><summary>Table view (__COUNT__ samples)</summary><div id="table"></div></details>
+<details class="card"><summary>Table view (__COUNT__ __UNIT__)</summary><div id="table"></div></details>
 <script id="data" type="application/json">__DATA__</script>
 <script>
 const D=JSON.parse(document.getElementById('data').textContent),S=D.samples;
@@ -304,7 +402,7 @@ const SERIES=[['cpu','CPU','--s1'],['gpu','GPU','--s2'],['board','Board','--s3']
 const NS='http://www.w3.org/2000/svg';
 const el=(n,a,t)=>{const e=document.createElementNS(NS,n);for(const k in a)e.setAttribute(k,a[k]);if(t!=null)e.textContent=t;return e};
 const fmtT=ts=>{const d=new Date(ts*1000);return d.toLocaleString([], {month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'})};
-const fmtX=ts=>{const d=new Date(ts*1000);return D.range==='7d'?d.toLocaleDateString([], {weekday:'short',day:'numeric'}):d.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})};
+const fmtX=ts=>{const d=new Date(ts*1000);return D.resolution==='hourly'?d.toLocaleDateString([], {month:'short',day:'numeric'}):D.range==='7d'?d.toLocaleDateString([], {weekday:'short',day:'numeric'}):d.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})};
 function chart(host,tipId,series,opts){
   const box=document.getElementById(host),tip=document.getElementById(tipId);
   const have=series.filter(s=>S.some(p=>p[s[0]]!=null));
@@ -387,11 +485,18 @@ def render_page(tachometer_root: Path, range_key: str = "24h", *, now: float | N
         for key in RANGES
     )
     data = json.dumps(payload, separators=(",", ":")).replace("</", "<\\/")
+    hourly = payload["resolution"] == "hourly"
     return (
         _PAGE.replace("__CHIPS__", "".join(chips))
         .replace("__FILTERS__", filters)
         .replace("__AGE__", _fmt_age(status["age_seconds"]))
         .replace("__RANGE__", payload["range"])
         .replace("__COUNT__", str(len(payload["samples"])))
+        .replace("__UNIT__", "hours" if hourly else "samples")
+        .replace(
+            "__TEMP_NOTE__",
+            "hourly maximum" if hourly else "one sample about every five minutes",
+        )
+        .replace("__LOAD_NOTE__", " (hourly mean)" if hourly else "")
         .replace("__DATA__", data)
     )

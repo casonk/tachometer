@@ -79,7 +79,8 @@ def _sample_host(args: argparse.Namespace) -> int:
     path = thermal.samples_path(manifest.repo_root)
     sample = thermal.collect_sample()
     keep_days = args.keep_days if args.keep_days else thermal.DEFAULT_KEEP_DAYS
-    kept = thermal.append_sample(path, sample, keep_days=keep_days)
+    aggregate_days = args.aggregate_days or thermal.DEFAULT_AGGREGATE_DAYS
+    kept = thermal.append_sample(path, sample, keep_days=keep_days, aggregate_days=aggregate_days)
     print(json.dumps({"path": str(path), "kept": kept, "sample": sample}, sort_keys=True))
     return 0
 
@@ -215,7 +216,13 @@ def build_parser() -> argparse.ArgumentParser:
         "--keep-days",
         type=float,
         default=None,
-        help="Days of samples to keep (default: 14).",
+        help="Days of five-minute samples to keep (default: 30).",
+    )
+    sample_host_parser.add_argument(
+        "--aggregate-days",
+        type=float,
+        default=None,
+        help="Days of hourly min/mean/max records to keep (default: 90).",
     )
     sample_host_parser.set_defaults(func=_sample_host)
 

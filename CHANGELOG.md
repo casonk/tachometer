@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Thermal history retention is now tiered. Five-minute samples are kept for 30
+  days (was 14); older ones are folded into one record per hour (minimum, mean,
+  maximum) in `.tachometer/host-samples-hourly.jsonl` and kept for 90 days.
+  `/thermal` gains 30d and 90d ranges drawn from hourly points: peak
+  temperature and fan speed, mean load. `sample-host` accepts `--keep-days` and
+  `--aggregate-days`.
 - Added a host thermal history. `tachometer sample-host` (wrapper
   `scripts/sample_host.sh`, timer template
   `config/clockwork/host-sampler.toml.template`) appends CPU, GPU, board and
