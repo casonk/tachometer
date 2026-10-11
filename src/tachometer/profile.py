@@ -132,19 +132,47 @@ def _read_process_count() -> int | None:
         return None
 
 
-def _read_cpu_temp() -> float | None:
-    thermal = Path("/sys/class/thermal")
-    if not thermal.exists():
-        return None
+# Thermal zone types that report the CPU package. Anything else (the ACPI
+# board zone, a wifi card, a battery) is not the CPU, whatever its index.
+_CPU_THERMAL_ZONE_TYPES = ("x86_pkg_temp", "cpu-thermal", "cpu_thermal", "soc-thermal")
+# hwmon driver names whose temp1 is the CPU package or die temperature.
+_CPU_HWMON_NAMES = ("coretemp", "k10temp", "zenpower", "cpu_thermal")
+
+
+def _read_millidegrees(path: Path) -> float | None:
     with contextlib.suppress(Exception):
-        # Prefer the first zone labelled x86_pkg_temp or cpu-thermal; fall back to zone0.
-        candidates = sorted(thermal.iterdir())
-        for zone in candidates:
-            temp_file = zone / "temp"
-            if not temp_file.exists():
-                continue
+        return int(path.read_text(encoding="utf-8").strip()) / 1000.0
+    return None
+
+
+def _read_cpu_temp(sys_class: Path = Path("/sys/class")) -> float | None:
+    """CPU package temperature in Celsius, or None when no CPU sensor is found.
+
+    A thermal zone is used only when its type names the CPU. The previous
+    implementation returned the first zone that had a temperature, which on
+    many desktops is `acpitz`: a board sensor that sits near room temperature
+    while the processor is at its limit. An unrelated reading presented as the
+    CPU temperature is worse than no reading, so there is no positional
+    fallback.
+    """
+    with contextlib.suppress(Exception):
+        for zone in sorted((sys_class / "thermal").glob("thermal_zone*")):
+            zone_type = ""
             with contextlib.suppress(Exception):
-                return int(temp_file.read_text(encoding="utf-8").strip()) / 1000.0
+                zone_type = (zone / "type").read_text(encoding="utf-8").strip()
+            if zone_type in _CPU_THERMAL_ZONE_TYPES:
+                temp = _read_millidegrees(zone / "temp")
+                if temp is not None:
+                    return temp
+    with contextlib.suppress(Exception):
+        for chip in sorted((sys_class / "hwmon").glob("hwmon*")):
+            name = ""
+            with contextlib.suppress(Exception):
+                name = (chip / "name").read_text(encoding="utf-8").strip()
+            if name in _CPU_HWMON_NAMES:
+                temp = _read_millidegrees(chip / "temp1_input")
+                if temp is not None:
+                    return temp
     return None
 
 

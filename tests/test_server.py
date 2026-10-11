@@ -468,3 +468,12 @@ def test_same_origin_request_rejects_forwarded_proto_mismatch():
     }
 
     assert _same_origin_request(headers) is False
+
+
+from tachometer.server import _temperature_light  # noqa: E402
+
+
+def test_temperature_light_thresholds():
+    assert _temperature_light(60.0, 80.0, 90.0) == "green"
+    assert _temperature_light(80.0, 80.0, 90.0) == "yellow"
+    assert _temperature_light(98.0, 80.0, 90.0) == "red"
