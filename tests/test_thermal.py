@@ -146,3 +146,105 @@ def test_page_renders_with_and_without_data_and_escapes_embedded_json(tmp_path):
     assert "__" not in page.split("<script>")[0]
     data = page.split('<script id="data" type="application/json">')[1].split("</script>")[0]
     assert json.loads(data.replace("<\\/", "</"))["samples"][0]["cpu"] == 91.0
+
+
+DAY = 86400
+
+
+def test_expired_samples_are_folded_into_hourly_records_not_lost(tmp_path):
+    path = thermal.samples_path(tmp_path)
+    base = 100 * DAY  # on an hour boundary
+    for offset, cpu in ((0, 40.0), (300, 90.0), (600, 50.0), (3600, 60.0)):
+        thermal.append_sample(path, {"ts": base + offset, "cpu": cpu, "load": cpu / 100})
+    assert not thermal.hourly_path(tmp_path).exists()
+
+    kept = thermal.append_sample(path, {"ts": base + 31 * DAY, "cpu": 45.0})
+
+    assert kept == 1
+    hourly = thermal.load_hourly(thermal.hourly_path(tmp_path))
+    assert sorted(hourly) == [base, base + 3600]
+    first = hourly[base]
+    assert first["n"] == 3
+    assert (first["cpu"]["min"], first["cpu"]["max"], first["cpu"]["n"]) == (40.0, 90.0, 3)
+    assert first["cpu"]["sum"] == 180.0
+    assert hourly[base + 3600]["cpu"]["max"] == 60.0
+
+
+def test_hourly_records_are_merged_across_appends_and_expire_after_their_own_window(tmp_path):
+    path = thermal.samples_path(tmp_path)
+    base = 200 * DAY
+    thermal.append_sample(path, {"ts": base, "cpu": 40.0})
+    thermal.append_sample(path, {"ts": base + 300, "cpu": 70.0})
+    # Two later appends each push one of the old samples out of the raw window.
+    thermal.append_sample(path, {"ts": base + 30 * DAY + 60, "cpu": 41.0})
+    thermal.append_sample(path, {"ts": base + 30 * DAY + 400, "cpu": 42.0})
+
+    bucket = thermal.load_hourly(thermal.hourly_path(tmp_path))[base]
+    assert (bucket["n"], bucket["cpu"]["min"], bucket["cpu"]["max"]) == (2, 40.0, 70.0)
+
+    thermal.append_sample(path, {"ts": base + 91 * DAY, "cpu": 43.0})
+    assert base not in thermal.load_hourly(thermal.hourly_path(tmp_path))
+
+
+def test_hourly_series_reports_peak_temperature_and_mean_load():
+    hour = 500 * 3600
+    raw = [
+        {"ts": hour + 60, "cpu": 50.0, "load": 0.2, "fan_max": 900},
+        {"ts": hour + 360, "cpu": 96.0, "load": 0.8, "fan_max": 2100},
+    ]
+    earlier = hour - 3600
+    stored = {
+        earlier: {
+            "ts": hour - 3600,
+            "n": 2,
+            "cpu": {"min": 30.0, "max": 44.0, "sum": 74.0, "n": 2},
+        },
+        # A stored bucket for an hour that also has raw samples is merged, not replaced.
+        hour: {"ts": hour, "n": 1, "cpu": {"min": 99.0, "max": 99.0, "sum": 99.0, "n": 1}},
+    }
+
+    points = thermal.hourly_series(raw, stored, since=hour - 3600)
+
+    assert [p["ts"] for p in points] == [hour - 3600, hour]
+    assert points[0]["cpu"] == 44.0 and points[0]["load"] is None
+    assert points[1]["cpu"] == 99.0
+    assert points[1]["load"] == 0.5
+    assert points[1]["fan_max"] == 2100
+    assert stored[hour]["n"] == 1, "building a view must not change the stored records"
+    assert thermal.hourly_series(raw, stored, since=hour)[0]["ts"] == hour
+
+
+def test_long_ranges_use_hourly_points_and_short_ranges_stay_raw(tmp_path):
+    path = thermal.samples_path(tmp_path)
+    now = 400 * DAY
+    for age_days in (80, 40, 10, 1):
+        for minute in (0, 5):
+            thermal.append_sample(
+                path, {"ts": now - age_days * DAY + minute * 60, "cpu": 50.0 + minute}
+            )
+
+    month = thermal.build_payload(tmp_path, "30d", now=now)
+    quarter = thermal.build_payload(tmp_path, "90d", now=now)
+    week = thermal.build_payload(tmp_path, "7d", now=now)
+
+    assert (month["resolution"], quarter["resolution"], week["resolution"]) == (
+        "hourly",
+        "hourly",
+        "5min",
+    )
+    assert len(month["samples"]) == 2  # days 10 and 1, one hour each
+    assert len(quarter["samples"]) == 4  # plus the two aged-out days
+    assert all(p["cpu"] == 55.0 for p in quarter["samples"])  # hourly peak
+    assert len(week["samples"]) == 2  # the two raw samples from yesterday
+
+
+def test_page_labels_hourly_ranges_as_such(tmp_path):
+    path = thermal.samples_path(tmp_path)
+    thermal.append_sample(path, {"ts": 1000, "cpu": 50.0, "load": 0.1})
+
+    page = thermal.render_page(tmp_path, "90d", now=1060)
+
+    assert "hourly maximum" in page and "(hourly mean)" in page
+    assert 'href="/thermal?range=30d"' in page
+    assert "__" not in page.split("<script>")[0]
+    assert "hourly maximum" not in thermal.render_page(tmp_path, "24h", now=1060)
