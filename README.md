@@ -129,6 +129,20 @@ bash scripts/sample_host.sh
 
 The dashboard charts the history at `/thermal`.
 
+To add SMART drive temperatures and a Drive health light, set
+`TACHOMETER_SMART_DIR` for the sampler to a directory that a separate
+root-run collector fills with one `<drive>.jsonl` per drive. Each line is one
+snapshot with `taken_at` (ISO 8601), `kind`, `health_passed`,
+`temperature_c` and `counters`; the sampler reads the last two lines and
+ignores snapshots older than three hours. Unset, the sampler reads no SMART
+data. For a systemd user unit, a drop-in works:
+
+```ini
+# ~/.config/systemd/user/tachometer-host-sampler.service.d/smart.conf
+[Service]
+Environment=TACHOMETER_SMART_DIR=/path/to/smart/history
+```
+
 Serve the dashboard on loopback only:
 
 ```bash
