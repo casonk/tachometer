@@ -2,9 +2,9 @@
 
 ## Unreleased
 
-- The host sampler now reads SMART history when it is available. If
-  `/var/lib/tire-rotation/smart/*.jsonl` exists (written by tire-rotation's
-  root timer; override with `TACHOMETER_SMART_DIR`), each sample includes the
+- The host sampler now reads SMART history when it is configured. If
+  `TACHOMETER_SMART_DIR` names a directory of per-drive JSON-lines histories
+  written by a root-run SMART collector, each sample includes the
   latest fresh SMART temperature per drive alongside the kernel's readings, and
   `/thermal` shows a Drive health chip: red when a drive fails its SMART
   health check, yellow when a fault counter rose since the previous snapshot.

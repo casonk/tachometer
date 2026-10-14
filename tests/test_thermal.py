@@ -346,3 +346,17 @@ def test_drive_health_reaches_the_status_and_the_page(tmp_path):
 
     page = thermal.render_page(tmp_path, "24h", now=1060)
     assert "Drive health" in page and "Fault counter rose: ssd" in page
+
+
+def test_collect_sample_reads_smart_only_when_a_directory_is_configured(tmp_path, monkeypatch):
+    smart = tmp_path / "smart"
+    _smart_file(smart, "ssd", _snap("2026-10-11T12:30:00+00:00", temp=71))
+    sysfs = tmp_path / "sys"
+    sysfs.mkdir()
+
+    monkeypatch.delenv(thermal.SMART_DIR_ENV, raising=False)
+    assert thermal.collect_sample(sysfs, now=NOW, gpu_reader=lambda: None)["smart"] == {}
+
+    monkeypatch.setenv(thermal.SMART_DIR_ENV, str(smart))
+    sample = thermal.collect_sample(sysfs, now=NOW, gpu_reader=lambda: None)
+    assert sample["drives"]["smart-disk:ssd"] == 71.0
