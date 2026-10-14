@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- The host-sampler clockwork template now carries `TACHOMETER_SMART_DIR` (empty
+  by default) in `[jobs.environment]`. Set it in the rendered
+  `config/clockwork/host-sampler.toml`, which is now gitignored, instead of a
+  hand-written systemd drop-in.
 - The host sampler now reads SMART history when it is configured. If
   `TACHOMETER_SMART_DIR` names a directory of per-drive JSON-lines histories
   written by a root-run SMART collector, each sample includes the
