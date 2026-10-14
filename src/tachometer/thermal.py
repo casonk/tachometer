@@ -136,16 +136,18 @@ def _read_gpu_temp() -> float | None:
     return None
 
 
-# Where smart-collector's root timer writes one JSON-lines history per drive.
-# This module only ever reads it; SMART itself needs root and the sampler
-# deliberately has none.
-DEFAULT_SMART_DIR = Path("/var/lib/smart-collector/smart")
-# The SMART timer is hourly. Past this age a snapshot says nothing about now.
+# TACHOMETER_SMART_DIR names a directory holding one JSON-lines SMART history
+# per drive, written by a separate root-run collector. This module only ever
+# reads it; SMART itself needs root and the sampler deliberately has none.
+# There is no default: unset means no SMART data.
+SMART_DIR_ENV = "TACHOMETER_SMART_DIR"
+# Collectors run hourly. Past this age a snapshot says nothing about now.
 SMART_MAX_AGE_SECONDS = 3 * 3600
 
 
-def _smart_dir() -> Path:
-    return Path(os.environ.get("TACHOMETER_SMART_DIR") or DEFAULT_SMART_DIR)
+def _smart_dir() -> Path | None:
+    value = os.environ.get(SMART_DIR_ENV, "").strip()
+    return Path(value) if value else None
 
 
 def _last_lines(path: Path, count: int = 2) -> list[dict[str, Any]]:
@@ -230,7 +232,9 @@ def collect_sample(
     with contextlib.suppress(Exception):
         load = round(os.getloadavg()[0] / (os.cpu_count() or 1), 3)
     drives = _read_drive_temps(sys_class)
-    smart = read_smart(smart_dir if smart_dir is not None else _smart_dir(), now=stamp)
+    if smart_dir is None:
+        smart_dir = _smart_dir()
+    smart = read_smart(smart_dir, now=stamp) if smart_dir is not None else {}
     for name, drive in smart.items():
         # SMART temperatures sit beside the kernel's, under their own prefix,
         # so the hottest reading wins whichever source it came from.
