@@ -1,9 +1,11 @@
 # Host temperature and load sampler: one small reading every five minutes,
 # charted on the dashboard's /thermal page.
 #
-# Replace __REPO_ROOT__ with the local tachometer checkout path, then install
-# through the shared scheduler:
-#   clockwork install --manifest <rendered file> --target systemd-user
+# Render to config/clockwork/host-sampler.toml (gitignored): replace
+# __REPO_ROOT__ with the local tachometer checkout path and, to add SMART drive
+# data, set TACHOMETER_SMART_DIR below. Then install through the shared
+# scheduler:
+#   clockwork install --manifest config/clockwork/host-sampler.toml --target systemd-user
 #
 # The job reads sysfs and nvidia-smi only and needs no privileges. If a job
 # guard is in use, mark this unit light or exempt: it is the thing that
@@ -19,6 +21,11 @@ exec_start = "/usr/bin/env bash __REPO_ROOT__/scripts/sample_host.sh"
 standard_output = "journal"
 standard_error = "journal"
 timer_description = "Sample host temperatures every five minutes"
+
+# Directory a separate root-run collector fills with one <drive>.jsonl SMART
+# history per drive. Empty means the sampler reads no SMART data.
+[jobs.environment]
+TACHOMETER_SMART_DIR = ""
 
 [jobs.timer]
 kind = "calendar"

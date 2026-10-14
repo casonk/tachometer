@@ -134,13 +134,14 @@ To add SMART drive temperatures and a Drive health light, set
 root-run collector fills with one `<drive>.jsonl` per drive. Each line is one
 snapshot with `taken_at` (ISO 8601), `kind`, `health_passed`,
 `temperature_c` and `counters`; the sampler reads the last two lines and
-ignores snapshots older than three hours. Unset, the sampler reads no SMART
-data. For a systemd user unit, a drop-in works:
+ignores snapshots older than three hours. Unset or empty, the sampler reads
+no SMART data. Set it in the rendered, gitignored manifest
+`config/clockwork/host-sampler.toml` so the path stays out of the tracked
+template:
 
-```ini
-# ~/.config/systemd/user/tachometer-host-sampler.service.d/smart.conf
-[Service]
-Environment=TACHOMETER_SMART_DIR=/path/to/smart/history
+```toml
+[jobs.environment]
+TACHOMETER_SMART_DIR = "/path/to/smart/history"
 ```
 
 Serve the dashboard on loopback only:
