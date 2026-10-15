@@ -147,11 +147,13 @@ TACHOMETER_SMART_DIR = "/path/to/smart/history"
 The rendered manifest is per machine. On macOS, install it with
 `--target launchd-user` (clockwork 2026-10-15 or newer renders the
 five-minute calendar there) and leave `TACHOMETER_SMART_DIR` empty. The
-sampler then reads what macOS exposes without root: the battery temperature
-from `ioreg`, charted as the board reading, and each physical disk's SMART
-verdict from `diskutil`, which drives the Drive health light. `diskutil`
-reports no temperatures or counters, and CPU temperature on macOS needs root,
-so those stay empty. The launchd job puts Homebrew's `bin` first on `PATH`
+sampler then reads what macOS exposes without root: each physical disk's
+SMART verdict from `diskutil`, which drives the Drive health light, and the
+battery temperature from `ioreg` where the battery reports one, charted as the
+board reading. Recent Apple Silicon laptops publish no battery temperature to
+`ioreg` at all (checked on a MacBook Air, 2026-10-15), so there the board
+reading stays empty. `diskutil` reports no temperatures or counters, and CPU
+temperature on macOS needs root, so those stay empty too. The launchd job puts Homebrew's `bin` first on `PATH`
 because tachometer needs Python 3.10 or newer.
 
 For what macOS reserves for root, install the root-run collector once:
