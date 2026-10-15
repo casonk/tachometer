@@ -152,8 +152,9 @@ def _run_plist(args: list[str]) -> Any:
 def _read_macos_battery_temp(run=_run_plist) -> float | None:
     """Battery temperature in Celsius. `ioreg` reports hundredths of a degree.
 
-    It is the one enclosure temperature macOS exposes without root, so it
-    stands in for the board reading on a laptop.
+    It is the one enclosure temperature macOS can expose without root, so it
+    stands in for the board reading on a laptop. Recent Apple Silicon
+    laptops leave the key out of `ioreg` entirely; the reading is then None.
     """
     entries = run(["ioreg", "-r", "-n", "AppleSmartBattery", "-a"])
     for entry in entries if isinstance(entries, list) else []:

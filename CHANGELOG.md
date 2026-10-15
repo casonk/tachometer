@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Document that recent Apple Silicon laptops publish no battery temperature to
+  `ioreg`, so the macOS board reading stays empty there.
 - Add a root-run macOS collector (`scripts/macos/powermetrics_collector.py`,
   installed by `sudo bash scripts/macos/install_powermetrics_collector.sh` as a
   root-owned copy and LaunchDaemon). Pointed at its output with
