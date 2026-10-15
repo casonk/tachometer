@@ -11,6 +11,7 @@ rectangle ".github/workflows/secret-scan.yml\n1 detected tool" as source_github_
 rectangle "scripts/refresh_tachometer_summaries.sh\n3 detected tools" as source_scripts_refresh_tachometer_summaries_sh #E0F2FE
 rectangle "scripts/run_all_tachometer_snapshots.sh\n2 detected tools" as source_scripts_run_all_tachometer_snapshots_sh #E0F2FE
 rectangle "scripts/run_tachometer_profile.sh\n3 detected tools" as source_scripts_run_tachometer_profile_sh #E0F2FE
+rectangle "scripts/sample_host.sh\n0 detected tools" as source_scripts_sample_host_sh #E0F2FE
 rectangle "scripts/serve_tachometer.sh\n1 detected tool" as source_scripts_serve_tachometer_sh #E0F2FE
 cloud "bash" as tool_bash #FEF3C7
 cloud "casonk/.github/.github/workflows/install-check.yml" as tool_casonk_github_github_workflows_install_check_yml #FEF3C7
@@ -36,7 +37,7 @@ source_scripts_run_tachometer_profile_sh --> tool_summarize
 source_scripts_run_tachometer_profile_sh --> tool_tachometer
 source_scripts_serve_tachometer_sh --> tool_tachometer
 note as toolingGraphSummary
-Scanned 7 tooling entrypoints.
+Scanned 8 tooling entrypoints.
 Detected 10 third-party tools.
 end note
 @enduml

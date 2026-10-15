@@ -8,6 +8,7 @@ skinparam linetype ortho
 rectangle "scripts/refresh_tachometer_summaries.sh\n0 local shell edges\n3 external tools" as shell_scripts_refresh_tachometer_summaries_sh #DBEAFE
 rectangle "scripts/run_all_tachometer_snapshots.sh\n0 local shell edges\n1 external tool" as shell_scripts_run_all_tachometer_snapshots_sh #DBEAFE
 rectangle "scripts/run_tachometer_profile.sh\n0 local shell edges\n3 external tools" as shell_scripts_run_tachometer_profile_sh #DBEAFE
+rectangle "scripts/sample_host.sh\n0 local shell edges\n0 external tools" as shell_scripts_sample_host_sh #DBEAFE
 rectangle "scripts/serve_tachometer.sh\n0 local shell edges\n1 external tool" as shell_scripts_serve_tachometer_sh #DBEAFE
 cloud "mapfile" as tool_mapfile #FEF3C7
 cloud "python3" as tool_python3 #FEF3C7
@@ -23,7 +24,7 @@ shell_scripts_run_tachometer_profile_sh --> tool_summarize
 shell_scripts_run_tachometer_profile_sh --> tool_tachometer
 shell_scripts_serve_tachometer_sh --> tool_tachometer
 note as shellGraphSummary
-Scanned 4 shell scripts.
+Scanned 5 shell scripts.
 Detected 0 local shell edges.
 Detected 5 external tools.
 end note
