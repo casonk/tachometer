@@ -425,3 +425,53 @@ def test_linux_sample_never_calls_the_macos_tools(tmp_path):
     )
 
     assert sample["board"] == 68.0
+
+
+def _powermetrics_file(tmp_path, *, age_seconds: int, **fields):
+    from datetime import datetime, timezone
+
+    taken = datetime.fromtimestamp(1_000_000 - age_seconds, tz=timezone.utc)
+    record = {"taken_at": taken.isoformat(), **fields}
+    path = tmp_path / "powermetrics.jsonl"
+    path.write_text(json.dumps(record) + "\n", encoding="utf-8")
+    return path
+
+
+def test_macos_root_collector_fills_cpu_fan_and_pressure(tmp_path, monkeypatch):
+    path = _powermetrics_file(
+        tmp_path, age_seconds=120, cpu_die_c=71.0, fan_rpm=2400, thermal_pressure="Serious"
+    )
+    monkeypatch.setenv(thermal.MACOS_POWERMETRICS_ENV, str(path))
+
+    sample = thermal.collect_sample(
+        tmp_path, now=1_000_000, gpu_reader=lambda: None, platform="darwin", macos_run=_fake_macos()
+    )
+
+    assert sample["cpu"] == 71.0
+    assert sample["fan_max"] == 2400
+    assert sample["pressure"] == "Serious"
+    status = thermal.latest_status([sample], now=1_000_000)
+    pressure = [r for r in status["readings"] if r["label"] == "Thermal pressure"]
+    assert pressure == [
+        {
+            "label": "Thermal pressure",
+            "value": None,
+            "light": "red",
+            "text": "Serious",
+            "verdict": "Throttling",
+        }
+    ]
+
+
+def test_a_stale_root_reading_is_ignored(tmp_path, monkeypatch):
+    path = _powermetrics_file(tmp_path, age_seconds=3600, cpu_die_c=71.0, thermal_pressure="Fair")
+    monkeypatch.setenv(thermal.MACOS_POWERMETRICS_ENV, str(path))
+
+    sample = thermal.collect_sample(
+        tmp_path, now=1_000_000, gpu_reader=lambda: None, platform="darwin", macos_run=_fake_macos()
+    )
+
+    assert sample["cpu"] is None
+    assert "pressure" not in sample
+    labels = [r["label"] for r in thermal.latest_status([sample], now=1_000_000)["readings"]]
+    assert "Thermal pressure" not in labels

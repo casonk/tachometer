@@ -44,6 +44,10 @@ accuracy_sec = "30"
 [jobs.launchd.environment]
 PATH = "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
 TACHOMETER_SMART_DIR = ""
+# Set to /var/db/tachometer/powermetrics.jsonl after installing the root-run
+# collector (sudo bash scripts/macos/install_powermetrics_collector.sh) to add
+# thermal pressure, and on Intel Macs CPU/GPU temperature and fan speed.
+TACHOMETER_MACOS_POWERMETRICS = ""
 
 # launchd cannot promise a firing window, so macOS drops accuracy_sec.
 [jobs.launchd.timer]
