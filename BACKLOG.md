@@ -25,6 +25,33 @@ All originally-planned items are now implemented.
 
 ## Future ideas
 
+- [ ] [manual:2026-10-15] **Ask GitHub Support to purge pre-rewrite commits** — this
+  repository's published history was rewritten (most recently on 2026-10-15,
+  to remove per-commit AI attribution trailers). GitHub keeps serving the old
+  commits to anyone with a hash, and through the read-only `refs/pull/*` refs
+  of earlier pull requests, until Support garbage-collects them. The request
+  is filed once for the whole portfolio from traction-control's backlog; mark
+  this done when an old hash returns 404 here. Never push an old clone's
+  history back.
+
+### Host sampler on macOS
+
+The host-sampler manifest is per machine: the tracked template is rendered to
+a gitignored `config/clockwork/host-sampler.toml` with that machine's repo path
+and SMART directory. On macOS it does not render yet, and would record little
+if it did:
+
+- clockwork refuses the template for `launchd-user`. `accuracy_sec` can be
+  withdrawn with `[jobs.launchd.timer] accuracy_sec = ""`, but the
+  five-minute `*:0/5` calendar is outside what clockwork maps to
+  `StartCalendarInterval`. Either teach clockwork minute steps (twelve
+  `Minute` entries) or let a `[jobs.launchd]` override switch the timer to a
+  300-second interval.
+- `collect_sample` reads `/sys/class` and `nvidia-smi`, so a Mac sample holds
+  load only. CPU and SoC temperatures need `powermetrics`, which requires
+  root, or an unprivileged SMC reader; drive health would need its own
+  collector, as SMART does on Linux.
+
 ### Detailed monitoring on Windows
 
 The package installs and runs on Windows, but measures very little there. The
