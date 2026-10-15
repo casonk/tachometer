@@ -360,3 +360,68 @@ def test_collect_sample_reads_smart_only_when_a_directory_is_configured(tmp_path
     monkeypatch.setenv(thermal.SMART_DIR_ENV, str(smart))
     sample = thermal.collect_sample(sysfs, now=NOW, gpu_reader=lambda: None)
     assert sample["drives"]["smart-disk:ssd"] == 71.0
+
+
+def _fake_macos(failing: str | None = None):
+    """A stand-in for ioreg/diskutil plist output on a laptop with two disks."""
+
+    def run(args):
+        if args[0] == "ioreg":
+            return [{"Temperature": 3071, "CycleCount": 12}]
+        if args[:3] == ["diskutil", "list", "-plist"]:
+            return {"WholeDisks": ["disk0", "disk4", "disk6"]}
+        disk = args[-1]
+        status = {"disk0": "Verified", "disk4": "Verified", "disk6": "Not Supported"}[disk]
+        if disk == failing:
+            status = "Failing"
+        return {"SMARTStatus": status, "SolidState": disk == "disk0"}
+
+    return run
+
+
+def test_macos_sample_uses_battery_temperature_and_diskutil_smart(tmp_path):
+    sample = thermal.collect_sample(
+        tmp_path, now=1000, gpu_reader=lambda: None, platform="darwin", macos_run=_fake_macos()
+    )
+
+    assert sample["board"] == 30.7
+    assert sample["cpu"] is None
+    assert sorted(sample["smart"]) == ["disk0", "disk4"]  # "Not Supported" is left out
+    assert sample["smart"]["disk0"]["kind"] == "nvme"
+    assert sample["smart"]["disk4"]["kind"] == "disk"
+    assert thermal.drive_health(sample["smart"])["light"] == "green"
+
+
+def test_macos_failing_disk_turns_drive_health_red(tmp_path):
+    sample = thermal.collect_sample(
+        tmp_path,
+        now=1000,
+        gpu_reader=lambda: None,
+        platform="darwin",
+        macos_run=_fake_macos(failing="disk4"),
+    )
+
+    assert thermal.drive_health(sample["smart"]) == {
+        "light": "red",
+        "detail": "SMART failed: disk4",
+    }
+
+
+def test_macos_readers_tolerate_missing_tools(tmp_path):
+    sample = thermal.collect_sample(
+        tmp_path, now=1000, gpu_reader=lambda: None, platform="darwin", macos_run=lambda args: None
+    )
+
+    assert sample["board"] is None
+    assert sample["smart"] == {}
+
+
+def test_linux_sample_never_calls_the_macos_tools(tmp_path):
+    def refuse(args):
+        raise AssertionError(f"called {args}")
+
+    sample = thermal.collect_sample(
+        _fake_sysfs(tmp_path), now=1000, gpu_reader=lambda: None, platform="linux", macos_run=refuse
+    )
+
+    assert sample["board"] == 68.0

@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- The host sampler runs on macOS. It records the battery temperature from
+  `ioreg` as the board reading and each physical disk's SMART verdict from
+  `diskutil` for the Drive health light, all without root. The host-sampler
+  template renders for `launchd-user` (it withdraws `accuracy_sec` and puts
+  Homebrew's Python first on `PATH`); this needs the clockwork release that
+  maps stepped-minute calendars.
 - The host-sampler clockwork template now carries `TACHOMETER_SMART_DIR` (empty
   by default) in `[jobs.environment]`. Set it in the rendered
   `config/clockwork/host-sampler.toml`, which is now gitignored, instead of a

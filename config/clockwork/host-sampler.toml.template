@@ -1,13 +1,18 @@
 # Host temperature and load sampler: one small reading every five minutes,
 # charted on the dashboard's /thermal page.
 #
-# Render to config/clockwork/host-sampler.toml (gitignored): replace
-# __REPO_ROOT__ with the local tachometer checkout path and, to add SMART drive
-# data, set TACHOMETER_SMART_DIR below. Then install through the shared
+# The rendered manifest is per machine. Render to
+# config/clockwork/host-sampler.toml (gitignored): replace __REPO_ROOT__ with
+# this machine's tachometer checkout path and, on Linux with a SMART
+# collector, set TACHOMETER_SMART_DIR below. Then install through the shared
 # scheduler:
-#   clockwork install --manifest config/clockwork/host-sampler.toml --target systemd-user
+#   Linux: clockwork install --manifest config/clockwork/host-sampler.toml --target systemd-user
+#   macOS: clockwork install --manifest config/clockwork/host-sampler.toml --target launchd-user
+# On macOS leave TACHOMETER_SMART_DIR empty: the sampler reads each disk's
+# SMART verdict from diskutil itself.
 #
-# The job reads sysfs and nvidia-smi only and needs no privileges. If a job
+# The job needs no privileges: sysfs and nvidia-smi on Linux, ioreg and
+# diskutil on macOS. If a job
 # guard is in use, mark this unit light or exempt: it is the thing that
 # observes a hot machine, so it must not be held back by one.
 
@@ -32,6 +37,17 @@ kind = "calendar"
 on_calendar = "*:0/5"
 persistent = false
 accuracy_sec = "30"
+
+# launchd starts jobs with a bare PATH that reaches only the system Python
+# 3.9; tachometer needs 3.10 or newer, so put Homebrew's first. This table
+# replaces [jobs.environment] for macOS, so it repeats the SMART setting.
+[jobs.launchd.environment]
+PATH = "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
+TACHOMETER_SMART_DIR = ""
+
+# launchd cannot promise a firing window, so macOS drops accuracy_sec.
+[jobs.launchd.timer]
+accuracy_sec = ""
 
 [jobs.cron]
 expression = "*/5 * * * *"
