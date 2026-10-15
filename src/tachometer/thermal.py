@@ -6,9 +6,11 @@ history. This module takes a small sample every few minutes (CPU, GPU, board,
 drives, fans, load), keeps a rolling window of them in a JSON-lines file, and
 renders that window as a time series with a stoplight for the latest reading.
 
-Everything is read from sysfs and, for the GPU, `nvidia-smi`; nothing here
-needs root. SATA drive temperatures appear only when the kernel's `drivetemp`
-module is loaded.
+On Linux everything is read from sysfs and, for the GPU, `nvidia-smi`; nothing
+here needs root. SATA drive temperatures appear only when the kernel's
+`drivetemp` module is loaded. On macOS the unprivileged sources are the battery
+temperature (`ioreg`, charted as the board reading) and each physical disk's
+SMART verdict (`diskutil`); CPU temperature there needs root and is left out.
 """
 
 from __future__ import annotations
@@ -17,8 +19,10 @@ import contextlib
 import html
 import json
 import os
+import plistlib
 import shutil
 import subprocess
+import sys
 import time
 from datetime import datetime
 from pathlib import Path
@@ -136,6 +140,53 @@ def _read_gpu_temp() -> float | None:
     return None
 
 
+def _run_plist(args: list[str]) -> Any:
+    """Parsed plist output of a macOS tool, or None if it fails."""
+    with contextlib.suppress(Exception):
+        out = subprocess.run(args, capture_output=True, timeout=10, check=False)
+        if out.returncode == 0 and out.stdout:
+            return plistlib.loads(out.stdout)
+    return None
+
+
+def _read_macos_battery_temp(run=_run_plist) -> float | None:
+    """Battery temperature in Celsius. `ioreg` reports hundredths of a degree.
+
+    It is the one enclosure temperature macOS exposes without root, so it
+    stands in for the board reading on a laptop.
+    """
+    entries = run(["ioreg", "-r", "-n", "AppleSmartBattery", "-a"])
+    for entry in entries if isinstance(entries, list) else []:
+        value = entry.get("Temperature") if isinstance(entry, dict) else None
+        if isinstance(value, int) and value > 0:
+            return round(value / 100.0, 1)
+    return None
+
+
+def _read_macos_smart(run=_run_plist) -> dict[str, dict[str, Any]]:
+    """SMART verdict per physical disk, shaped like `read_smart` entries.
+
+    `diskutil` gives only Verified or Failing, with no counters or
+    temperature, so `rose` stays empty and `temp` is None.
+    """
+    listing = run(["diskutil", "list", "-plist", "physical"])
+    disks = listing.get("WholeDisks", []) if isinstance(listing, dict) else []
+    drives: dict[str, dict[str, Any]] = {}
+    for disk in disks:
+        info = run(["diskutil", "info", "-plist", str(disk)])
+        status = info.get("SMARTStatus") if isinstance(info, dict) else None
+        if status not in ("Verified", "Failing"):
+            continue
+        drives[str(disk)] = {
+            "kind": "nvme" if info.get("SolidState") else "disk",
+            "temp": None,
+            "health_passed": status == "Verified",
+            "rose": [],
+            "age_seconds": 0,
+        }
+    return drives
+
+
 # TACHOMETER_SMART_DIR names a directory holding one JSON-lines SMART history
 # per drive, written by a separate root-run collector. This module only ever
 # reads it; SMART itself needs root and the sampler deliberately has none.
@@ -225,9 +276,12 @@ def collect_sample(
     now: float | None = None,
     gpu_reader=_read_gpu_temp,
     smart_dir: Path | None = None,
+    platform: str | None = None,
+    macos_run=_run_plist,
 ) -> dict[str, Any]:
     """One reading of everything the page charts. Missing sensors are None."""
     stamp = now if now is not None else time.time()
+    macos = (platform or sys.platform) == "darwin"
     load = None
     with contextlib.suppress(Exception):
         load = round(os.getloadavg()[0] / (os.cpu_count() or 1), 3)
@@ -235,6 +289,8 @@ def collect_sample(
     if smart_dir is None:
         smart_dir = _smart_dir()
     smart = read_smart(smart_dir, now=stamp) if smart_dir is not None else {}
+    if macos and not smart:
+        smart = _read_macos_smart(macos_run)
     for name, drive in smart.items():
         # SMART temperatures sit beside the kernel's, under their own prefix,
         # so the hottest reading wins whichever source it came from.
@@ -246,7 +302,7 @@ def collect_sample(
         "load": load,
         "cpu": _read_cpu_temp(sys_class),
         "gpu": gpu_reader(),
-        "board": _read_board_temp(sys_class),
+        "board": _read_macos_battery_temp(macos_run) if macos else _read_board_temp(sys_class),
         "drive_max": max(drives.values()) if drives else None,
         "drives": drives,
         "fan_max": _read_fan_rpm_max(sys_class),

@@ -34,23 +34,15 @@ All originally-planned items are now implemented.
   this done when an old hash returns 404 here. Never push an old clone's
   history back.
 
-### Host sampler on macOS
+### CPU temperature on macOS
 
-The host-sampler manifest is per machine: the tracked template is rendered to
-a gitignored `config/clockwork/host-sampler.toml` with that machine's repo path
-and SMART directory. On macOS it does not render yet, and would record little
-if it did:
-
-- clockwork refuses the template for `launchd-user`. `accuracy_sec` can be
-  withdrawn with `[jobs.launchd.timer] accuracy_sec = ""`, but the
-  five-minute `*:0/5` calendar is outside what clockwork maps to
-  `StartCalendarInterval`. Either teach clockwork minute steps (twelve
-  `Minute` entries) or let a `[jobs.launchd]` override switch the timer to a
-  300-second interval.
-- `collect_sample` reads `/sys/class` and `nvidia-smi`, so a Mac sample holds
-  load only. CPU and SoC temperatures need `powermetrics`, which requires
-  root, or an unprivileged SMC reader; drive health would need its own
-  collector, as SMART does on Linux.
+The host sampler runs on macOS and records the battery temperature and each
+disk's SMART verdict, but no CPU or SoC temperature: `powermetrics` needs root,
+and Apple Silicon exposes die sensors only through private IOKit HID
+interfaces. Options are a small root-run collector writing a JSON-lines file
+(the pattern SMART uses on Linux) or an unprivileged HID sensor reader, if one
+proves stable across macOS releases. The thermal-pressure level from
+`pmset -g therm` is unprivileged and could be charted as a coarse stand-in.
 
 ### Detailed monitoring on Windows
 
