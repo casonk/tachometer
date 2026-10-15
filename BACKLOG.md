@@ -34,15 +34,14 @@ All originally-planned items are now implemented.
   this done when an old hash returns 404 here. Never push an old clone's
   history back.
 
-### CPU temperature on macOS
+### CPU temperature on Apple Silicon
 
-The host sampler runs on macOS and records the battery temperature and each
-disk's SMART verdict, but no CPU or SoC temperature: `powermetrics` needs root,
-and Apple Silicon exposes die sensors only through private IOKit HID
-interfaces. Options are a small root-run collector writing a JSON-lines file
-(the pattern SMART uses on Linux) or an unprivileged HID sensor reader, if one
-proves stable across macOS releases. The thermal-pressure level from
-`pmset -g therm` is unprivileged and could be charted as a coarse stand-in.
+The root-run powermetrics collector gives Intel Macs CPU and GPU die
+temperatures and every Mac a thermal-pressure light, but Apple Silicon
+`powermetrics` reports no temperatures. Its die sensors are reachable only
+through private IOKit HID interfaces; add a reader only if one proves stable
+across macOS releases, and keep it in the root collector rather than the
+user-run sampler.
 
 ### Detailed monitoring on Windows
 

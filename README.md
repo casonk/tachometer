@@ -154,6 +154,22 @@ reports no temperatures or counters, and CPU temperature on macOS needs root,
 so those stay empty. The launchd job puts Homebrew's `bin` first on `PATH`
 because tachometer needs Python 3.10 or newer.
 
+For what macOS reserves for root, install the root-run collector once:
+
+```bash
+sudo bash scripts/macos/install_powermetrics_collector.sh
+```
+
+It installs a root-owned copy of `scripts/macos/powermetrics_collector.py`
+under `/usr/local/libexec/tachometer` (the daemon never runs the editable
+checkout) and a LaunchDaemon that appends one `powermetrics` reading every five
+minutes to `/var/db/tachometer/powermetrics.jsonl`. Set
+`TACHOMETER_MACOS_POWERMETRICS` to that file in the rendered manifest's
+`[jobs.launchd.environment]` and reinstall the sampler. Every Mac then gets a
+Thermal pressure light (Nominal, Fair, Serious, Critical); Intel Macs also get
+CPU and GPU die temperature and fan speed. Apple Silicon `powermetrics` reports
+no temperatures, only pressure and power. `--uninstall` removes the daemon.
+
 Serve the dashboard on loopback only:
 
 ```bash

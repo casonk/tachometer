@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Add a root-run macOS collector (`scripts/macos/powermetrics_collector.py`,
+  installed by `sudo bash scripts/macos/install_powermetrics_collector.sh` as a
+  root-owned copy and LaunchDaemon). Pointed at its output with
+  `TACHOMETER_MACOS_POWERMETRICS`, the host sampler adds a Thermal pressure
+  light on every Mac and CPU/GPU die temperature and fan speed on Intel Macs.
 - The host sampler runs on macOS. It records the battery temperature from
   `ioreg` as the board reading and each physical disk's SMART verdict from
   `diskutil` for the Drive health light, all without root. The host-sampler

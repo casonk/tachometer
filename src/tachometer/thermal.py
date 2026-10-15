@@ -187,6 +187,42 @@ def _read_macos_smart(run=_run_plist) -> dict[str, dict[str, Any]]:
     return drives
 
 
+# TACHOMETER_MACOS_POWERMETRICS names the JSON-lines file the root-run
+# collector (scripts/macos/powermetrics_collector.py) appends to. It supplies
+# what macOS hides from an unprivileged process: CPU and GPU die temperature
+# and fan speed on Intel Macs, thermal pressure on every Mac.
+MACOS_POWERMETRICS_ENV = "TACHOMETER_MACOS_POWERMETRICS"
+# The collector runs every five minutes; older than this, it has stopped.
+POWERMETRICS_MAX_AGE_SECONDS = 15 * 60
+# macOS thermal pressure levels, as powermetrics names them, by severity.
+_PRESSURE_LIGHT = {
+    "nominal": "green",
+    "fair": "yellow",
+    "moderate": "yellow",
+    "serious": "red",
+    "heavy": "red",
+    "critical": "red",
+    "trapping": "red",
+    "sleeping": "red",
+}
+
+
+def read_powermetrics(path: Path, *, now: float) -> dict[str, Any]:
+    """The collector's newest reading, or {} when it is missing or stale."""
+    history = _last_lines(path, count=1)
+    if not history:
+        return {}
+    latest = history[-1]
+    taken = _snapshot_epoch(latest)
+    if taken is None or now - taken > POWERMETRICS_MAX_AGE_SECONDS:
+        return {}
+    return latest
+
+
+def pressure_light(level: str | None) -> str:
+    return _PRESSURE_LIGHT.get((level or "").lower(), "unknown")
+
+
 # TACHOMETER_SMART_DIR names a directory holding one JSON-lines SMART history
 # per drive, written by a separate root-run collector. This module only ever
 # reads it; SMART itself needs root and the sampler deliberately has none.
@@ -291,12 +327,16 @@ def collect_sample(
     smart = read_smart(smart_dir, now=stamp) if smart_dir is not None else {}
     if macos and not smart:
         smart = _read_macos_smart(macos_run)
+    power: dict[str, Any] = {}
+    power_file = os.environ.get(MACOS_POWERMETRICS_ENV, "").strip()
+    if macos and power_file:
+        power = read_powermetrics(Path(power_file), now=stamp)
     for name, drive in smart.items():
         # SMART temperatures sit beside the kernel's, under their own prefix,
         # so the hottest reading wins whichever source it came from.
         if drive["temp"] is not None:
             drives[f"smart-{drive['kind']}:{name}"] = drive["temp"]
-    return {
+    sample = {
         "smart": smart,
         "ts": int(stamp),
         "load": load,
@@ -307,6 +347,16 @@ def collect_sample(
         "drives": drives,
         "fan_max": _read_fan_rpm_max(sys_class),
     }
+    if power:
+        for field, key in (("cpu", "cpu_die_c"), ("gpu", "gpu_die_c"), ("fan_max", "fan_rpm")):
+            if sample[field] is None and isinstance(power.get(key), int | float):
+                sample[field] = power[key]
+        sample["pressure"] = power.get("thermal_pressure")
+        sample["power_w"] = {
+            "cpu": power.get("cpu_power_w"),
+            "gpu": power.get("gpu_power_w"),
+        }
+    return sample
 
 
 def load_samples(path: Path, *, since: float | None = None) -> list[dict[str, Any]]:
@@ -459,6 +509,20 @@ def latest_status(samples: list[dict[str, Any]], *, now: float | None = None) ->
     readings.append(
         {"label": "Drive health", "value": None, "light": health["light"], "text": health["detail"]}
     )
+    if last.get("pressure"):
+        # Only macOS with the root collector reports this, so other hosts keep
+        # the same five readings they always had.
+        readings.append(
+            {
+                "label": "Thermal pressure",
+                "value": None,
+                "light": pressure_light(last["pressure"]),
+                "text": str(last["pressure"]),
+                "verdict": {"green": "OK", "yellow": "Watch", "red": "Throttling"}.get(
+                    pressure_light(last["pressure"]), "No data"
+                ),
+            }
+        )
     overall = max((r["light"] for r in readings), key=_LIGHT_RANK.__getitem__)
     return {
         "has_data": True,
@@ -629,7 +693,7 @@ def render_page(tachometer_root: Path, range_key: str = "24h", *, now: float | N
         light = reading["light"]
         if "text" in reading:
             # A status reading: the headline is the verdict, the detail says why.
-            value = _LIGHT_WORD[light] if light != "red" else "Failing"
+            value = reading.get("verdict") or (_LIGHT_WORD[light] if light != "red" else "Failing")
             note = html.escape(reading["text"])
         else:
             value = "–" if reading["value"] is None else f"{reading['value']:.0f}°C"
