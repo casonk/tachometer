@@ -166,6 +166,38 @@ def _power_profiles_daemon() -> str | None:
     return None
 
 
+_WHOLE_DISK = re.compile(r"^(sd[a-z]+|nvme\d+n\d+|vd[a-z]+|xvd[a-z]+|hd[a-z]+|mmcblk\d+)$")
+# Scheduler each drive type should run, as fedora-debugg's install_io_tuning.sh sets it.
+RECOMMENDED_SCHEDULER = {"nvme": "none", "ssd": "mq-deadline", "hdd": "bfq"}
+
+
+def disk_limits(sys_block: Path) -> list[dict[str, Any]]:
+    """I/O scheduler and read-ahead per whole disk, with its drive type."""
+    disks = []
+    for base in sorted(sys_block.glob("*")):
+        if not _WHOLE_DISK.match(base.name):
+            continue
+        queue = base / "queue"
+        scheduler_line = _read(queue / "scheduler") or ""
+        match = re.search(r"\[([^\]]+)\]", scheduler_line)
+        scheduler = match.group(1) if match else (scheduler_line or None)
+        kind = (
+            "nvme"
+            if base.name.startswith("nvme")
+            else ("hdd" if _read(queue / "rotational") == "1" else "ssd")
+        )
+        disks.append(
+            {
+                "dev": base.name,
+                "model": " ".join((_read(base / "device" / "model") or "").split()) or None,
+                "kind": kind,
+                "scheduler": scheduler,
+                "read_ahead_kb": _int(queue / "read_ahead_kb"),
+            }
+        )
+    return disks
+
+
 def power_profile(etc: Path = Path("/etc"), ppd=_power_profiles_daemon) -> dict[str, str]:
     tuned = _read(etc / "tuned" / "active_profile")
     if tuned:
@@ -178,6 +210,7 @@ def read_limiters(
     sys_class: Path = Path("/sys/class"),
     *,
     cpu_dir: Path | None = None,
+    sys_block: Path | None = None,
     etc: Path = Path("/etc"),
     gpu_query=_run_nvidia_smi,
     ppd=_power_profiles_daemon,
@@ -192,6 +225,9 @@ def read_limiters(
     frequency = cpu_frequency_limits(cpu_dir)
     if rapl or frequency:
         limiters["cpu"] = {**({"rapl": rapl} if rapl else {}), **frequency}
+    disks = disk_limits(sys_block if sys_block is not None else sys_class.parent / "block")
+    if disks:
+        limiters["disks"] = disks
     profile = power_profile(etc, ppd)
     if profile:
         limiters["profile"] = profile
@@ -250,6 +286,23 @@ def describe(limiters: dict[str, Any]) -> list[dict[str, str]]:
                 "setting": ", ".join(bits),
                 "state": policy,
                 "light": "green" if capped or cpu.get("turbo") is False else "none",
+            }
+        )
+    for disk in limiters.get("disks") or []:
+        kind = {"nvme": "NVMe", "ssd": "SSD", "hdd": "HDD"}[disk["kind"]]
+        recommended = RECOMMENDED_SCHEDULER[disk["kind"]]
+        scheduler = disk.get("scheduler") or "?"
+        read_ahead = disk.get("read_ahead_kb")
+        matches = scheduler == recommended
+        rows.append(
+            {
+                "limiter": f"Disk I/O — {disk['dev']}"
+                + (f" {disk['model']}" if disk.get("model") else "")
+                + f" ({kind})",
+                "setting": f"{scheduler}"
+                + (f", {read_ahead} KiB read-ahead" if read_ahead is not None else ""),
+                "state": f"tuned for {kind}" if matches else f"{recommended} suits {kind} better",
+                "light": "green" if matches else "yellow",
             }
         )
     profile = limiters.get("profile")

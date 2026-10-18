@@ -333,3 +333,100 @@ def test_page_offers_controls_only_when_available(tmp_path):
     assert "<option selected>balanced</option><option>powersave</option>" in on
     assert 'name="range" value="7d"' in on
     assert "Power profile set to &lt;powersave&gt;" in on
+
+
+# --- disks --------------------------------------------------------------------
+
+
+def _block(root: Path) -> Path:
+    block = root / "sys" / "block"
+    for dev, rotational, scheduler, read_ahead, model in (
+        ("nvme0n1", "0", "[none] mq-deadline kyber bfq", "128", "WD SN750"),
+        ("sda", "0", "none mq-deadline kyber [bfq]", "128", "Samsung SSD 870"),
+        ("sdb", "1", "none mq-deadline kyber [bfq]", "8192", "ST16000NT001"),
+        ("loop0", "0", "[none]", "128", ""),
+    ):
+        _write(block / dev / "queue" / "rotational", rotational)
+        _write(block / dev / "queue" / "scheduler", scheduler)
+        _write(block / dev / "queue" / "read_ahead_kb", read_ahead)
+        _write(block / dev / "device" / "model", f"{model}   ")
+        _write(block / dev / "size", "31251759104")
+    return block
+
+
+def test_disk_limits_report_scheduler_read_ahead_and_type(tmp_path):
+    disks = {d["dev"]: d for d in limiters.disk_limits(_block(tmp_path))}
+
+    assert set(disks) == {"nvme0n1", "sda", "sdb"}  # loop devices are not disks
+    assert disks["sdb"] == {
+        "dev": "sdb",
+        "model": "ST16000NT001",
+        "kind": "hdd",
+        "scheduler": "bfq",
+        "read_ahead_kb": 8192,
+    }
+    assert disks["nvme0n1"]["kind"] == "nvme" and disks["nvme0n1"]["scheduler"] == "none"
+
+    rows = {r["limiter"]: r for r in limiters.describe({"disks": list(disks.values())})}
+    ssd = rows["Disk I/O — sda Samsung SSD 870 (SSD)"]
+    assert ssd["setting"] == "bfq, 128 KiB read-ahead"
+    assert ssd["state"] == "mq-deadline suits SSD better" and ssd["light"] == "yellow"
+    assert rows["Disk I/O — sdb ST16000NT001 (HDD)"]["light"] == "green"
+
+
+def test_disk_counters_become_busy_percent_and_throughput(tmp_path):
+    stats = tmp_path / "diskstats"
+    stats.write_text(
+        "   8  16 sdb 100 0 2000 0 50 0 4000 0 0 1000 0 0 0 0 0\n"
+        "   8  17 sdb1 100 0 2000 0 50 0 4000 0 0 1000 0 0 0 0 0\n"
+        "   7   0 loop0 1 0 8 0 0 0 0 0 0 1 0 0 0 0 0\n"
+        " 259   0 nvme0n1 5 0 80 0 5 0 80 0 0 10 0 0 0 0 0\n",
+        encoding="utf-8",
+    )
+    counters = thermal._read_disk_counters(stats)
+    assert counters == {"sdb": [2000, 4000, 1000], "nvme0n1": [80, 80, 10]}
+
+    before = {"ts": 1000, "disk_counters": counters}
+    after = {
+        "ts": 1300,
+        "disk_counters": {
+            "sdb": [2000 + 300 * 2048, 4000 + 300 * 4096, 1000 + 150_000],  # 1 + 2 MiB/s, 50% busy
+            "nvme0n1": [0, 0, 0],  # counters reset: rebooted
+        },
+    }
+    rates = thermal.disk_rates(before, after)
+    assert rates == {"sdb": {"busy": 50.0, "read_mbs": 1.05, "write_mbs": 2.1}}
+    assert thermal.disk_rates(None, after) == {}
+    assert thermal.disk_rates({"ts": 1300, "disk_counters": counters}, after) == {}
+
+
+def test_disk_activity_reaches_payload_hourly_history_and_page(tmp_path):
+    root = tmp_path / "tacho"
+    path = thermal.samples_path(root)
+    thermal.append_sample(path, {"ts": 1000, "disk_counters": {"sdb": [0, 0, 0]}})
+    thermal.append_sample(path, {"ts": 1300, "disk_counters": {"sdb": [0, 300 * 2048, 30_000]}})
+
+    assert thermal.load_samples(path)[-1]["disks"]["sdb"]["busy"] == 10.0
+    payload = thermal.build_payload(root, "24h", now=1400)
+    assert payload["samples"][-1]["disk_busy:sdb"] == 10.0
+    assert payload["samples"][-1]["disk_mbs:sdb"] == 1.05
+    assert "sdb" in payload["disk_labels"]
+
+    points = thermal.hourly_series(
+        [
+            {"ts": 3600, "disks": {"sdb": {"busy": 5.0, "read_mbs": 1.0, "write_mbs": 0.0}}},
+            {"ts": 3900, "disks": {"sdb": {"busy": 40.0, "read_mbs": 9.0, "write_mbs": 1.0}}},
+        ],
+        {},
+        since=0,
+    )
+    assert points[0]["disk_busy:sdb"] == 40.0 and points[0]["disk_mbs:sdb"] == 10.0
+
+    page = thermal.render_page(root, "24h", now=1400, controls={"available": False})
+    assert "<h2>Disks</h2>" in page
+
+
+def test_disk_labels_name_model_size_and_type(tmp_path):
+    labels = thermal.disk_labels(["sdb", "nvme0n1"], _block(tmp_path))
+    assert labels["sdb"] == "sdb · ST16000NT001 · 16 TB HDD"
+    assert labels["nvme0n1"] == "nvme0n1 · WD SN750 · 16 TB NVMe"

@@ -154,6 +154,14 @@ installed its root-owned helper (`/usr/local/sbin/fedora-debugg-limiter`, or
 `POST /thermal/limiters` (same-origin only), are validated here and again by the
 helper, persist across reboots, and are followed by a fresh host sample.
 
+A **Disks** chart plots, per whole disk, the percent of each interval it was
+busy and its read plus write throughput, from `/proc/diskstats` counters stored
+with each sample and differenced against the previous one (counters that went
+backwards after a reboot are skipped). Each disk's I/O scheduler and read-ahead
+also appear among the rev limiters, green when the scheduler suits the drive
+type (NVMe `none`, SSD `mq-deadline`, HDD `bfq`, as fedora-debugg's
+`install_io_tuning.sh` sets them) and amber otherwise.
+
 A **Fans** chart plots every spinning fan's RPM (headers reporting 0 are left
 out) and the GPU fan's percentage; long ranges show each hour's maximum. Fans are
 named `Fan N` unless the hwmon driver provides a label or the dashboard's
