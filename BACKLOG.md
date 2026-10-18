@@ -34,6 +34,18 @@ All originally-planned items are now implemented.
   this done when an old hash returns 404 here. Never push an old clone's
   history back.
 
+- [ ] [manual:2026-10-18] **PCIe link rev limiters.** Add a row per NVMe drive and GPU
+  to the `/thermal` Rev limiters table with the current link speed and width
+  against the device's and port's maximum (`/sys/bus/pci/devices/*/current_link_speed`,
+  `current_link_width`, `max_link_*`, no root needed), amber when a link trains
+  below what both ends support. On the workstation both NVMe drives run PCIe 3.0
+  x2 although they are x4 devices; this was found only by hand while tuning
+  read-ahead (see fedora-debugg's backlog for the hardware review).
+- [ ] [manual:2026-10-18] **Firmware in the host view.** Show the board and BIOS
+  version and date (`/sys/class/dmi/id/{board_name,bios_version,bios_date}`,
+  readable without root) on `/thermal` or the host banner, so an outdated BIOS
+  (currently 3006 from 2021-10-12) stays visible.
+
 ### CPU temperature on Apple Silicon
 
 The root-run powermetrics collector gives Intel Macs CPU and GPU die
