@@ -186,16 +186,31 @@ def disk_limits(sys_block: Path) -> list[dict[str, Any]]:
             if base.name.startswith("nvme")
             else ("hdd" if _read(queue / "rotational") == "1" else "ssd")
         )
-        disks.append(
-            {
-                "dev": base.name,
-                "model": " ".join((_read(base / "device" / "model") or "").split()) or None,
-                "kind": kind,
-                "scheduler": scheduler,
-                "read_ahead_kb": _int(queue / "read_ahead_kb"),
-            }
-        )
+        disk = {
+            "dev": base.name,
+            "model": " ".join((_read(base / "device" / "model") or "").split()) or None,
+            "kind": kind,
+            "scheduler": scheduler,
+            "read_ahead_kb": _int(queue / "read_ahead_kb"),
+        }
+        volumes = _volumes(base)
+        if volumes:
+            disk["volumes"] = volumes
+        disks.append(disk)
     return disks
+
+
+def _volumes(base: Path) -> list[dict[str, Any]]:
+    """Device-mapper volumes (LUKS, LVM) stacked on a disk or its partitions.
+
+    Reads go through these, and each keeps its own read-ahead.
+    """
+    holders = list(base.glob("holders/*")) + list(base.glob("*/holders/*"))
+    volumes = []
+    for holder in sorted(holders, key=lambda p: p.name):
+        name = _read(holder / "dm" / "name") or holder.name
+        volumes.append({"name": name, "read_ahead_kb": _int(holder / "queue" / "read_ahead_kb")})
+    return volumes
 
 
 def power_profile(etc: Path = Path("/etc"), ppd=_power_profiles_daemon) -> dict[str, str]:
@@ -300,7 +315,12 @@ def describe(limiters: dict[str, Any]) -> list[dict[str, str]]:
                 + (f" {disk['model']}" if disk.get("model") else "")
                 + f" ({kind})",
                 "setting": f"{scheduler}"
-                + (f", {read_ahead} KiB read-ahead" if read_ahead is not None else ""),
+                + (f", {read_ahead} KiB read-ahead" if read_ahead is not None else "")
+                + "".join(
+                    f"; volume {v['name']} {v['read_ahead_kb']} KiB"
+                    for v in disk.get("volumes") or []
+                    if v.get("read_ahead_kb") is not None
+                ),
                 "state": f"tuned for {kind}" if matches else f"{recommended} suits {kind} better",
                 "light": "green" if matches else "yellow",
             }
