@@ -57,7 +57,25 @@ All originally-planned items are now implemented.
   (a soak test that also shows when a rev limiter engages); medians with spread,
   not single numbers. Run it on demand before and after any hardware, BIOS or
   tuning change, and on a slow schedule when the machine is idle, and chart the
-  history next to `/thermal`.
+  history next to `/thermal`. Results also go into fedora-debugg's
+  `docs/tuning-log.md` / `docs/benchmarks/` when they back a decision (its
+  `scripts/bench_cold_read.py` is the disk part to reuse).
+
+  Scheduling has to be careful so a benchmark never overloads the PC:
+  - run only in a quiet window (e.g. 02:00–05:00), only when load per thread,
+    GPU utilisation and disk busy have been low for ~15 min, and never while
+    someone is streaming from the library or the AI upscaler is rendering
+    (pause `clockwork-upscale` for the run, resume after);
+  - one benchmark at a time (lock file), each with a hard time limit, and a long
+    gap between runs (weekly or monthly, plus on-demand);
+  - honour the rev limiters: stop a test as soon as GPU or CPU temperature
+    crosses the same limits the upscaler uses (72 / 78 °C) or a fan passes a
+    set RPM, and record that it was cut short rather than retrying;
+  - lowest CPU and I/O priority, a bounded working set (no more than a few GiB
+    of reads, nothing written to the data disks except results), and no write
+    benchmarks on drives that hold data unless explicitly requested;
+  - every run logs what it skipped or aborted, so gaps in the history explain
+    themselves.
 
 ### CPU temperature on Apple Silicon
 
