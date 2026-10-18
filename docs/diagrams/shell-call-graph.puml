@@ -5,16 +5,39 @@ skinparam shadowing false
 skinparam defaultFontName Monospace
 skinparam componentStyle rectangle
 skinparam linetype ortho
+rectangle "scripts/macos/install_powermetrics_collector.sh\n0 local shell edges\n11 external tools" as shell_scripts_macos_install_powermetrics_collector_sh #DBEAFE
 rectangle "scripts/refresh_tachometer_summaries.sh\n0 local shell edges\n3 external tools" as shell_scripts_refresh_tachometer_summaries_sh #DBEAFE
 rectangle "scripts/run_all_tachometer_snapshots.sh\n0 local shell edges\n1 external tool" as shell_scripts_run_all_tachometer_snapshots_sh #DBEAFE
 rectangle "scripts/run_tachometer_profile.sh\n0 local shell edges\n3 external tools" as shell_scripts_run_tachometer_profile_sh #DBEAFE
 rectangle "scripts/sample_host.sh\n0 local shell edges\n0 external tools" as shell_scripts_sample_host_sh #DBEAFE
 rectangle "scripts/serve_tachometer.sh\n0 local shell edges\n1 external tool" as shell_scripts_serve_tachometer_sh #DBEAFE
+cloud "cat" as tool_cat #FEF3C7
+cloud "chmod" as tool_chmod #FEF3C7
+cloud "chown" as tool_chown #FEF3C7
+cloud "install" as tool_install #FEF3C7
+cloud "launchctl" as tool_launchctl #FEF3C7
 cloud "mapfile" as tool_mapfile #FEF3C7
+cloud "mv" as tool_mv #FEF3C7
+cloud "plutil" as tool_plutil #FEF3C7
 cloud "python3" as tool_python3 #FEF3C7
+cloud "rm" as tool_rm #FEF3C7
+cloud "rmdir" as tool_rmdir #FEF3C7
 cloud "run" as tool_run #FEF3C7
+cloud "sleep" as tool_sleep #FEF3C7
 cloud "summarize" as tool_summarize #FEF3C7
 cloud "tachometer" as tool_tachometer #FEF3C7
+cloud "tail" as tool_tail #FEF3C7
+shell_scripts_macos_install_powermetrics_collector_sh --> tool_cat
+shell_scripts_macos_install_powermetrics_collector_sh --> tool_chmod
+shell_scripts_macos_install_powermetrics_collector_sh --> tool_chown
+shell_scripts_macos_install_powermetrics_collector_sh --> tool_install
+shell_scripts_macos_install_powermetrics_collector_sh --> tool_launchctl
+shell_scripts_macos_install_powermetrics_collector_sh --> tool_mv
+shell_scripts_macos_install_powermetrics_collector_sh --> tool_plutil
+shell_scripts_macos_install_powermetrics_collector_sh --> tool_rm
+shell_scripts_macos_install_powermetrics_collector_sh --> tool_rmdir
+shell_scripts_macos_install_powermetrics_collector_sh --> tool_sleep
+shell_scripts_macos_install_powermetrics_collector_sh --> tool_tail
 shell_scripts_refresh_tachometer_summaries_sh --> tool_mapfile
 shell_scripts_refresh_tachometer_summaries_sh --> tool_python3
 shell_scripts_refresh_tachometer_summaries_sh --> tool_tachometer
@@ -24,8 +47,8 @@ shell_scripts_run_tachometer_profile_sh --> tool_summarize
 shell_scripts_run_tachometer_profile_sh --> tool_tachometer
 shell_scripts_serve_tachometer_sh --> tool_tachometer
 note as shellGraphSummary
-Scanned 5 shell scripts.
+Scanned 6 shell scripts.
 Detected 0 local shell edges.
-Detected 5 external tools.
+Detected 16 external tools.
 end note
 @enduml
