@@ -165,3 +165,171 @@ def test_macos_samples_skip_the_linux_limiters(tmp_path):
         limits_reader=lambda: called.append(1) or {},
     )
     assert called == [] and "limiters" not in sample
+
+
+# --- fans ---------------------------------------------------------------------
+
+
+def _fans_sysfs(root: Path) -> Path:
+    _write(root / "hwmon" / "hwmon7" / "name", "nct6798")
+    _write(root / "hwmon" / "hwmon7" / "fan1_input", "1230")
+    _write(root / "hwmon" / "hwmon7" / "fan2_input", "1859")
+    _write(root / "hwmon" / "hwmon7" / "fan2_label", "CPU_FAN")
+    _write(root / "hwmon" / "hwmon7" / "fan10_input", "900")
+    _write(root / "hwmon" / "hwmon7" / "fan4_input", "0")  # unconnected header
+    return root
+
+
+def test_fans_are_read_per_header_and_idle_headers_skipped(tmp_path):
+    sysfs = _fans_sysfs(tmp_path)
+    assert thermal._read_fans(sysfs) == {"fan1": 1230, "fan2": 1859, "fan10": 900}
+    _write(sysfs / "hwmon" / "hwmon8" / "name", "asus")
+    _write(sysfs / "hwmon" / "hwmon8" / "fan1_input", "700")
+    assert set(thermal._read_fans(sysfs)) == {
+        "nct6798/fan1", "nct6798/fan2", "nct6798/fan10", "asus/fan1",
+    }  # fmt: skip
+
+
+def test_fan_labels_prefer_configuration_then_hwmon_then_number(tmp_path, monkeypatch):
+    sysfs = _fans_sysfs(tmp_path)
+    monkeypatch.setenv(thermal.FAN_LABELS_ENV, "fan1=Rear exhaust, junk ,fan10 = Front")
+    assert thermal.fan_labels(["fan1", "fan2", "fan10"], sysfs) == {
+        "fan1": "Rear exhaust",
+        "fan2": "CPU_FAN",
+        "fan10": "Front",
+    }
+    monkeypatch.delenv(thermal.FAN_LABELS_ENV)
+    assert thermal.fan_labels(["fan1"], sysfs) == {"fan1": "Fan 1"}
+
+
+def test_fans_flow_into_samples_payload_hourly_history_and_page(tmp_path):
+    sysfs = _fans_sysfs(tmp_path / "sys")
+    root = tmp_path / "tacho"
+    path = thermal.samples_path(root)
+    for ts, gpu_fan in ((1000, 40.0), (1300, 65.0)):
+        sample = thermal.collect_sample(
+            sysfs,
+            now=ts,
+            gpu_reader=lambda: 60.0,
+            limits_reader=lambda: {},
+            gpu_fan_reader=lambda value=gpu_fan: value,
+            platform="linux",
+        )
+        thermal.append_sample(path, sample)
+    assert sample["fans"]["fan2"] == 1859 and sample["gpu_fan"] == 65.0
+
+    payload = thermal.build_payload(root, "24h", now=1400)
+    assert payload["samples"][-1]["fan:fan2"] == 1859
+    assert payload["samples"][-1]["gpu_fan"] == 65.0
+    assert set(payload["fan_labels"]) == {"fan1", "fan2", "fan10"}
+
+    points = thermal.hourly_series(
+        [
+            {"ts": 3600, "fans": {"fan1": 1200}, "gpu_fan": 30.0},
+            {"ts": 3900, "fans": {"fan1": 1500}, "gpu_fan": 55.0},
+        ],
+        {},
+        since=0,
+    )
+    assert points[0]["fan:fan1"] == 1500 and points[0]["gpu_fan"] == 55.0
+
+    page = thermal.render_page(root, "24h", now=1400, controls={"available": False})
+    assert "<h2>Fans</h2>" in page and "GPU fan" in page
+
+
+# --- controls -----------------------------------------------------------------
+
+
+class FakeRun:
+    def __init__(self, returncode=0, stdout="", stderr=""):
+        self.calls = []
+        self.result = (returncode, stdout, stderr)
+
+    def __call__(self, cmd, **_kwargs):
+        import subprocess
+
+        self.calls.append(cmd)
+        if cmd[:2] == ["tuned-adm", "list"]:
+            return subprocess.CompletedProcess(
+                cmd,
+                0,
+                "Available profiles:\n- balanced   - x\n- powersave  - y\nCurrent active profile: balanced\n",
+                "",
+            )
+        code, out, err = self.result
+        return subprocess.CompletedProcess(cmd, code, out, err)
+
+
+def test_controls_need_the_helper_and_a_sudo_rule(monkeypatch):
+    monkeypatch.setattr(limiters.shutil, "which", lambda _tool: "/usr/bin/tuned-adm")
+    missing = limiters.controls_status(run=FakeRun(), exists=lambda _p: False)
+    assert missing["available"] is False and missing["reason"] == "not installed"
+
+    denied = limiters.controls_status(run=FakeRun(returncode=1), exists=lambda _p: True)
+    assert denied["available"] is False and "sudo" in denied["reason"]
+
+    run = FakeRun(stdout="ok\n")
+    ready = limiters.controls_status(run=run, exists=lambda _p: True)
+    assert ready["available"] is True and ready["profiles"] == ["balanced", "powersave"]
+    assert run.calls[0] == ["sudo", "-n", limiters.DEFAULT_HELPER, "check"]
+
+
+def test_apply_setting_validates_then_calls_the_helper(monkeypatch):
+    monkeypatch.setenv(limiters.HELPER_ENV, "/opt/helper")
+    run = FakeRun(stdout="GPU power limit set to 230 W and kept for future boots\n")
+
+    assert limiters.apply_setting("gpu_power", "230", run=run) == (
+        True,
+        "GPU power limit set to 230 W and kept for future boots",
+    )
+    assert run.calls[-1] == ["sudo", "-n", "/opt/helper", "gpu-power", "230"]
+
+    assert limiters.apply_setting("profile", "powersave", run=run)[0] is True
+    assert run.calls[-1][-2:] == ["profile", "powersave"]
+
+    calls = len(run.calls)
+    assert limiters.apply_setting("gpu_power", "250;id", run=run)[0] is False
+    assert limiters.apply_setting("profile", "../etc", run=run)[0] is False
+    assert limiters.apply_setting("fans", "max", run=run)[0] is False
+    assert len(run.calls) == calls  # nothing invalid reaches sudo
+
+    failing = FakeRun(
+        returncode=1, stderr="fedora-debugg-limiter: 999 W is outside this GPU's range\n"
+    )
+    assert limiters.apply_setting("gpu_power", "999", run=failing) == (
+        False,
+        "999 W is outside this GPU's range",
+    )
+
+
+def test_page_offers_controls_only_when_available(tmp_path):
+    sys_class, cpu, etc = _fake_host(tmp_path)
+
+    def reader():
+        return limiters.read_limiters(sys_class, cpu_dir=cpu, etc=etc, gpu_query=lambda: GPU_CSV)
+
+    root = tmp_path / "tacho"
+    thermal.append_sample(
+        thermal.samples_path(root),
+        thermal.collect_sample(
+            sys_class, now=1000, gpu_reader=lambda: 60.0, limits_reader=reader,
+            gpu_fan_reader=lambda: None, platform="linux",
+        ),
+    )  # fmt: skip
+
+    off = thermal.render_page(
+        root, "7d", now=1100, controls={"available": False, "reason": "not installed"}
+    )
+    assert "install_limiter_controls.sh" in off and 'action="/thermal/limiters"' not in off
+
+    on = thermal.render_page(
+        root,
+        "7d",
+        now=1100,
+        controls={"available": True, "profiles": ["balanced", "powersave"]},
+        message="Power profile set to <powersave>",
+    )
+    assert 'name="value" min="100" max="450" step="5" value="250"' in on
+    assert "<option selected>balanced</option><option>powersave</option>" in on
+    assert 'name="range" value="7d"' in on
+    assert "Power profile set to &lt;powersave&gt;" in on

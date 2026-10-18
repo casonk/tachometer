@@ -26,7 +26,7 @@ from datetime import datetime, timedelta, timezone
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 from typing import Any
-from urllib.parse import parse_qs, urlparse
+from urllib.parse import parse_qs, urlencode, urlparse
 
 try:
     import tomllib
@@ -1906,7 +1906,12 @@ class _Handler(BaseHTTPRequestHandler):
             range_key = qs.get("range", ["24h"])[0]
             root = self.__class__.tachometer_root
             if parsed.path == "/thermal":
-                self._send(thermal.render_page(root, range_key))
+                message = qs.get("msg", [""])[0][:300] or None
+                self._send(
+                    thermal.render_page(
+                        root, range_key, message=message, message_ok=qs.get("ok") == ["1"]
+                    )
+                )
             else:
                 self._send(
                     json.dumps(thermal.build_payload(root, range_key), indent=2),
@@ -1963,6 +1968,10 @@ class _Handler(BaseHTTPRequestHandler):
             self.send_response(303)
             self.send_header("Location", f"/?view={view}")
             self.end_headers()
+        elif parsed.path == "/thermal/limiters":
+            length = int(self.headers.get("Content-Length", "0"))
+            form = parse_qs(self.rfile.read(length).decode("utf-8") if length else "")
+            self._change_limiter(form)
         elif parsed.path == "/admin/settings":
             length = int(self.headers.get("Content-Length", "0"))
             body = self.rfile.read(length).decode("utf-8") if length else ""
@@ -1988,6 +1997,25 @@ class _Handler(BaseHTTPRequestHandler):
             self.end_headers()
         else:
             self._send("Not Found", "text/plain", 404)
+
+    def _change_limiter(self, form: dict[str, list[str]]) -> None:
+        """Apply one limiter change through the root helper, then resample the host."""
+        from . import limiters, thermal
+
+        range_key = form.get("range", ["24h"])[0]
+        range_key = range_key if range_key in thermal.RANGES else "24h"
+        ok, message = limiters.apply_setting(
+            form.get("setting", [""])[0], form.get("value", [""])[0]
+        )
+        if ok:
+            # Record the new state now instead of waiting up to five minutes.
+            with contextlib.suppress(Exception):
+                root = self.__class__.tachometer_root
+                thermal.append_sample(thermal.samples_path(root), thermal.collect_sample())
+        query = urlencode({"range": range_key, "msg": message, "ok": "1" if ok else "0"})
+        self.send_response(303)
+        self.send_header("Location", f"/thermal?{query}")
+        self.end_headers()
 
     def log_message(self, fmt: str, *args: Any) -> None:  # silence default access log
         pass
