@@ -20,6 +20,7 @@ import html
 import json
 import os
 import plistlib
+import re
 import shutil
 import subprocess
 import sys
@@ -46,6 +47,13 @@ _FIELDS = (
 )  # fmt: skip
 # Per-fan RPM is stored as sample["fans"] = {key: rpm} and flattened to "fan:<key>".
 _FAN_PREFIX = "fan:"
+# Per-disk activity is stored as sample["disks"] = {dev: {busy, read_mbs, write_mbs}} and
+# flattened to "disk_busy:<dev>" (percent of the interval busy) and "disk_mbs:<dev>"
+# (read plus write, megabytes per second).
+_DISK_BUSY = "disk_busy:"
+_DISK_MBS = "disk_mbs:"
+_DYNAMIC = (_FAN_PREFIX, _DISK_BUSY, _DISK_MBS)
+_WHOLE_DISK = re.compile(r"^(sd[a-z]+|nvme\d+n\d+|vd[a-z]+|xvd[a-z]+|hd[a-z]+|mmcblk\d+)$")
 # Optional display names: TACHOMETER_FAN_LABELS="fan1=Rear exhaust,fan2=CPU,fan3=Front intake"
 FAN_LABELS_ENV = "TACHOMETER_FAN_LABELS"
 
@@ -145,6 +153,64 @@ def _read_fans(sys_class: Path) -> dict[str, int]:
                 if rpm > 0:  # unconnected headers report 0
                     fans[prefix + path.name.removesuffix("_input")] = rpm
     return dict(sorted(fans.items(), key=lambda item: _natural(item[0])))
+
+
+def _read_disk_counters(diskstats: Path = Path("/proc/diskstats")) -> dict[str, list[int]]:
+    """Cumulative [sectors read, sectors written, ms busy] per whole disk."""
+    counters: dict[str, list[int]] = {}
+    with contextlib.suppress(OSError):
+        for line in diskstats.read_text(encoding="utf-8").splitlines():
+            fields = line.split()
+            if len(fields) >= 13 and _WHOLE_DISK.match(fields[2]):
+                with contextlib.suppress(ValueError):
+                    counters[fields[2]] = [int(fields[5]), int(fields[9]), int(fields[12])]
+    return counters
+
+
+def disk_rates(previous: dict[str, Any] | None, sample: dict[str, Any]) -> dict[str, dict]:
+    """Busy percent and MB/s per disk between two samples' counters.
+
+    A disk whose counters went backwards (reboot, re-plug) is left out of
+    that interval rather than reported as a huge negative rate.
+    """
+    if not previous or not previous.get("disk_counters") or not sample.get("disk_counters"):
+        return {}
+    seconds = sample["ts"] - previous["ts"]
+    if not 0 < seconds <= 3600:
+        return {}
+    rates = {}
+    for dev, (read, written, busy_ms) in sample["disk_counters"].items():
+        before = previous["disk_counters"].get(dev)
+        if not before:
+            continue
+        deltas = [read - before[0], written - before[1], busy_ms - before[2]]
+        if min(deltas) < 0:
+            continue
+        rates[dev] = {
+            "busy": round(min(100.0, deltas[2] / (seconds * 10)), 1),
+            "read_mbs": round(deltas[0] * 512 / seconds / 1e6, 2),
+            "write_mbs": round(deltas[1] * 512 / seconds / 1e6, 2),
+        }
+    return rates
+
+
+def disk_labels(devs: list[str], sys_block: Path = Path("/sys/block")) -> dict[str, str]:
+    """ "sdb · ST16000NT001 · 16 TB HDD" style names from sysfs."""
+    labels = {}
+    for dev in devs:
+        base = sys_block / dev
+        model = " ".join(_text(base / "device" / "model").split())
+        size = ""
+        with contextlib.suppress(ValueError):
+            terabytes = int(_text(base / "size")) * 512 / 1e12
+            size = f"{terabytes:.0f} TB" if terabytes >= 1 else f"{terabytes * 1000:.0f} GB"
+        kind = (
+            "NVMe"
+            if dev.startswith("nvme")
+            else ("HDD" if _text(base / "queue" / "rotational") == "1" else "SSD")
+        )
+        labels[dev] = " · ".join(part for part in (dev, model, f"{size} {kind}".strip()) if part)
+    return labels
 
 
 def _natural(key: str) -> tuple[str, int]:
@@ -420,6 +486,7 @@ def collect_sample(
         "drives": drives,
         "fan_max": _read_fan_rpm_max(sys_class),
         "fans": {} if macos else _read_fans(sys_class),
+        "disk_counters": {} if macos else _read_disk_counters(),
         "gpu_fan": None if macos else gpu_fan_reader(),
     }
     caps: dict[str, Any] = {}
@@ -482,8 +549,13 @@ def _chartable(sample: dict[str, Any]) -> dict[str, Any]:
     values = {name: sample.get(name) for name in _FIELDS}
     for key, rpm in (sample.get("fans") or {}).items():
         values[_FAN_PREFIX + key] = rpm
+    for dev, rate in (sample.get("disks") or {}).items():
+        values[_DISK_BUSY + dev] = rate.get("busy")
+        values[_DISK_MBS + dev] = round(
+            (rate.get("read_mbs") or 0) + (rate.get("write_mbs") or 0), 2
+        )
     for key, value in sample.items():
-        if key.startswith(_FAN_PREFIX):  # already flattened (an hourly point)
+        if key.startswith(_DYNAMIC):  # already flattened (an hourly point)
             values[key] = value
     return values
 
@@ -528,6 +600,8 @@ def append_sample(
     """
     cutoff = sample["ts"] - keep_days * 86400
     existing = load_samples(path)
+    if "disks" not in sample:
+        sample["disks"] = disk_rates(existing[-1] if existing else None, sample)
     expired = [s for s in existing if s["ts"] < cutoff]
     kept = [s for s in existing if s["ts"] >= cutoff]
     kept.append(sample)
@@ -558,7 +632,7 @@ def hourly_series(
         if ts < _hour(since):
             continue
         point: dict[str, Any] = {"ts": ts}
-        names = list(_FIELDS) + sorted(k for k in bucket if k.startswith(_FAN_PREFIX))
+        names = list(_FIELDS) + sorted(k for k in bucket if k.startswith(_DYNAMIC))
         for name in names:
             stat = bucket.get(name)
             if not stat or not stat.get("n"):
@@ -649,7 +723,11 @@ def build_payload(
         {k.removeprefix(_FAN_PREFIX) for p in points for k in p if k.startswith(_FAN_PREFIX)},
         key=_natural,
     )
+    disk_devs = sorted(
+        {k.removeprefix(_DISK_BUSY) for p in points for k in p if k.startswith(_DISK_BUSY)}
+    )
     return {
+        "disk_labels": disk_labels(disk_devs),
         "fan_labels": fan_labels(fan_keys),
         "range": range_key,
         "resolution": resolution,
@@ -738,6 +816,11 @@ __LIMITERS__
  <div class="legend" id="fan-legend"></div><div id="fans"></div><div class="tip" id="tip-fans"></div>
  <div id="gpufan-wrap"><div class="sub" style="margin:10px 0 0">GPU fan, percent of its maximum</div>
  <div id="gpufan"></div><div class="tip" id="tip-gpufan"></div></div></div>
+<div class="card" id="disks-card"><h2>Disks</h2>
+ <div class="sub" style="margin:0">Percent of each interval the disk was busy__DISK_NOTE__</div>
+ <div class="legend" id="disk-legend"></div><div id="diskbusy"></div><div class="tip" id="tip-diskbusy"></div>
+ <div class="sub" style="margin:10px 0 0">Throughput, read plus write, megabytes per second</div>
+ <div id="diskmbs"></div><div class="tip" id="tip-diskmbs"></div></div>
 <div class="card"><h2>Load per CPU thread</h2>
  <div class="sub" style="margin:0">1-minute load average divided by thread count; 1.0 is fully busy__LOAD_NOTE__</div>
  <div id="load"></div><div class="tip" id="tip-load"></div></div>
@@ -800,6 +883,12 @@ const fanShown=chart('fans','tip-fans',[...FANS,['fan_max','Fastest fan','--s6']
 document.getElementById('fan-legend').innerHTML=(fanShown||[]).map(s=>`<span><i style="background:var(${s[2]})"></i>${s[1]}</span>`).join('');
 if(!chart('gpufan','tip-gpufan',[['gpu_fan','GPU fan','--s2']],{h:130,step:25,min:100,zero:true,endLabels:true,label:'GPU fan speed over time',fmt:v=>Math.round(v)+'%'}))document.getElementById('gpufan-wrap').style.display='none';
 if(!fanShown&&document.getElementById('gpufan-wrap').style.display==='none')document.getElementById('fans-card').style.display='none';
+const DEVS=[...new Set(S.flatMap(p=>Object.keys(p).filter(k=>k.startsWith('disk_busy:'))))].map(k=>k.slice(10)).sort();
+const devName=d=>(D.disk_labels||{})[d]||d;
+const busyShown=chart('diskbusy','tip-diskbusy',DEVS.map((d,i)=>['disk_busy:'+d,devName(d),'--s'+(i%6+1)]),{h:180,step:25,min:100,zero:true,endLabels:false,label:'Disk busy percent over time',fmt:v=>Math.round(v)+'%'});
+chart('diskmbs','tip-diskmbs',DEVS.map((d,i)=>['disk_mbs:'+d,devName(d),'--s'+(i%6+1)]),{h:180,step:50,min:50,zero:true,endLabels:false,label:'Disk throughput over time',fmt:v=>(+v).toFixed(v<10?1:0)+' MB/s'});
+document.getElementById('disk-legend').innerHTML=(busyShown||[]).map(s=>`<span><i style="background:var(${s[2]})"></i>${s[1]}</span>`).join('');
+if(!busyShown)document.getElementById('disks-card').style.display='none';
 chart('load','tip-load',[['load','Load','--s1']],{h:150,step:0.5,min:1,zero:true,endLabels:false,label:'Load per CPU thread over time',fmt:v=>(+v).toFixed(2)});
 const rows=S.slice(-200).reverse().map(p=>'<tr><td>'+fmtT(p.ts)+'</td>'+['cpu','gpu','board','drive_max'].map(k=>'<td>'+(p[k]==null?'–':Math.round(p[k]))+'</td>').join('')+'<td>'+(p.load==null?'–':p.load.toFixed(2))+'</td><td>'+(p.fan_max==null?'–':p.fan_max)+'</td></tr>').join('');
 document.getElementById('table').innerHTML='<table><thead><tr><th>Time</th><th>CPU °C</th><th>GPU °C</th><th>Board °C</th><th>Hottest drive °C</th><th>Load</th><th>Fan max RPM</th></tr></thead><tbody>'+rows+'</tbody></table>';
@@ -882,8 +971,9 @@ def _limiter_card(
     return (
         '<div class="card"><h2>Rev limiters</h2>'
         '<div class="sub" style="margin:0 0 6px">The caps this host runs under, from the latest '
-        "sample. A green dot is a limiter that is set; amber means it is holding the hardware "
-        "back right now.</div>"
+        "sample. A green dot is a limiter that is set or a disk tuned for its type; amber means "
+        "it is holding the hardware back right now, or a disk's scheduler does not suit it."
+        "</div>"
         '<table class="limits"><thead><tr><th>Limiter</th><th>Setting</th><th>Now</th></tr>'
         f"</thead><tbody>{body}</tbody></table>"
         + _controls_form(limiters or {}, controls or {}, range_key)
@@ -953,6 +1043,7 @@ def render_page(
         .replace("__LOAD_NOTE__", " (hourly mean)" if hourly else "")
         .replace("__POWER_NOTE__", "; hourly maximum" if hourly else "")
         .replace("__FAN_NOTE__", "; hourly maximum" if hourly else "")
+        .replace("__DISK_NOTE__", "; hourly maximum" if hourly else "")
         .replace(
             "__LIMITERS__",
             _limiter_card(
