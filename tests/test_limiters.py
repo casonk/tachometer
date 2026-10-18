@@ -430,3 +430,28 @@ def test_disk_labels_name_model_size_and_type(tmp_path):
     labels = thermal.disk_labels(["sdb", "nvme0n1"], _block(tmp_path))
     assert labels["sdb"] == "sdb · ST16000NT001 · 16 TB HDD"
     assert labels["nvme0n1"] == "nvme0n1 · WD SN750 · 16 TB NVMe"
+
+
+def test_disk_rows_include_the_volumes_reads_go_through(tmp_path):
+    block = _block(tmp_path)
+    dm = tmp_path / "sys" / "devices" / "virtual" / "block" / "dm-2"
+    _write(dm / "dm" / "name", "4tb-m2")
+    _write(dm / "queue" / "read_ahead_kb", "512")
+    (block / "nvme0n1" / "holders").mkdir(parents=True)
+    (block / "nvme0n1" / "holders" / "dm-2").symlink_to(dm)
+    part = block / "sda" / "sda1" / "holders"
+    part.mkdir(parents=True)
+    dm1 = tmp_path / "sys" / "devices" / "virtual" / "block" / "dm-1"
+    _write(dm1 / "dm" / "name", "4tb-sata")
+    _write(dm1 / "queue" / "read_ahead_kb", "128")
+    (part / "dm-1").symlink_to(dm1)
+
+    disks = {d["dev"]: d for d in limiters.disk_limits(block)}
+
+    assert disks["nvme0n1"]["volumes"] == [{"name": "4tb-m2", "read_ahead_kb": 512}]
+    assert disks["sda"]["volumes"] == [{"name": "4tb-sata", "read_ahead_kb": 128}]
+    assert "volumes" not in disks["sdb"]
+    rows = {r["limiter"]: r for r in limiters.describe({"disks": list(disks.values())})}
+    assert rows["Disk I/O — nvme0n1 WD SN750 (NVMe)"]["setting"] == (
+        "none, 128 KiB read-ahead; volume 4tb-m2 512 KiB"
+    )
