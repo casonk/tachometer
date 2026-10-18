@@ -137,8 +137,11 @@ def _validate_bind_host(host: str, *, allow_remote: bool) -> None:
 
 def _same_origin_request(headers: Any) -> bool:
     source = str(headers.get("Origin") or headers.get("Referer") or "").strip()
-    if not source:
-        return False
+    if not source or source == "null":
+        # The private edge sends Referrer-Policy: no-referrer, so browsers post
+        # same-site forms with no Referer and "Origin: null". Fall back to the
+        # browser's own Sec-Fetch-Site, which a page on another site cannot forge.
+        return str(headers.get("Sec-Fetch-Site") or "").strip() == "same-origin"
     parsed = urlparse(source)
     if not parsed.scheme or not parsed.netloc:
         return False

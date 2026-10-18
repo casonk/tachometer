@@ -529,3 +529,23 @@ def test_thermal_limiter_post_applies_resamples_and_redirects(tmp_path, monkeypa
         assert applied == [("gpu_power", "230")]
     finally:
         httpd.shutdown()
+
+
+@pytest.mark.unit
+def test_same_origin_falls_back_to_fetch_metadata_behind_no_referrer():
+    # Behind Referrer-Policy: no-referrer a same-site form arrives with Origin: null.
+    proxied = {"Host": "tachometer.internal", "Origin": "null", "Sec-Fetch-Site": "same-origin"}
+    assert _same_origin_request(proxied) is True
+    assert (
+        _same_origin_request({"Host": "tachometer.internal", "Sec-Fetch-Site": "same-origin"})
+        is True
+    )
+
+    for site in ("cross-site", "same-site", "none", ""):
+        assert (
+            _same_origin_request({"Host": "h", "Origin": "null", "Sec-Fetch-Site": site}) is False
+        )
+    assert _same_origin_request({"Host": "h"}) is False
+    # A real foreign Origin is refused even if fetch metadata claims otherwise.
+    forged = {"Host": "h", "Origin": "https://evil.example", "Sec-Fetch-Site": "same-origin"}
+    assert _same_origin_request(forged) is False
