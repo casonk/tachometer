@@ -46,6 +46,19 @@ All originally-planned items are now implemented.
   readable without root) on `/thermal` or the host banner, so an outdated BIOS
   (currently 3006 from 2021-10-12) stays visible.
 
+- [ ] [manual:2026-10-18] **Benchmark suite (longer, repeatable).** The read-ahead
+  tuning on the workstation showed both how much a measurement can reveal (LUKS on
+  NVMe went 485 -> 1404 MB/s) and how noisy short runs are (the same 2 MiB setting
+  measured 1404 and 1278 MB/s in two sessions). Add a `tachometer bench` that runs
+  longer, repeated tests and keeps the results as history: cold sequential and
+  random reads per volume (fio, or the posix_fadvise-based script used for the
+  read-ahead sweep), including read amplification from `/proc/diskstats`; memory
+  bandwidth; CPU and GPU sustained load with temperature, power and clock traces
+  (a soak test that also shows when a rev limiter engages); medians with spread,
+  not single numbers. Run it on demand before and after any hardware, BIOS or
+  tuning change, and on a slow schedule when the machine is idle, and chart the
+  history next to `/thermal`.
+
 ### CPU temperature on Apple Silicon
 
 The root-run powermetrics collector gives Intel Macs CPU and GPU die
