@@ -144,8 +144,22 @@ hard the machine may run (`src/tachometer/limiters.py`, Linux, no root needed):
 
 `/thermal` shows them in a "Rev limiters" table (green when a cap is set, amber
 when one is biting) and charts GPU power draw against the cap; `/api/thermal`
-returns them under `status.limiters`. The caps themselves are set elsewhere,
-for example fedora-debugg's `install_gpu_power_limit.sh` for the GPU.
+returns them under `status.limiters`.
+
+The same card can **change** the GPU power cap and the tuned profile once
+fedora-debugg's `sudo ./scripts/install_limiter_controls.sh --user $USER` has
+installed its root-owned helper (`/usr/local/sbin/fedora-debugg-limiter`, or
+`TACHOMETER_LIMITER_HELPER`) and the sudoers rule for it. The page calls
+`sudo -n <helper> check` to decide whether to show the form; changes go through
+`POST /thermal/limiters` (same-origin only), are validated here and again by the
+helper, persist across reboots, and are followed by a fresh host sample.
+
+A **Fans** chart plots every spinning fan's RPM (headers reporting 0 are left
+out) and the GPU fan's percentage; long ranges show each hour's maximum. Fans are
+named `Fan N` unless the hwmon driver provides a label or the dashboard's
+environment sets `TACHOMETER_FAN_LABELS`, for example
+`fan1=Rear exhaust,fan2=CPU,fan3=Front intake` (keys are `fanN`, or
+`<chip>/fanN` when several chips report fans).
 
 To add SMART drive temperatures and a Drive health light, set
 `TACHOMETER_SMART_DIR` for the sampler to a directory that a separate

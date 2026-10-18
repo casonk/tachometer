@@ -41,7 +41,13 @@ RANGES = {"6h": 6, "24h": 24, "7d": 168, "30d": 720, "90d": 2160}
 # Ranges long enough that five-minute points stop being readable are drawn
 # from hourly buckets instead.
 HOURLY_RANGES = ("30d", "90d")
-_FIELDS = ("cpu", "gpu", "board", "drive_max", "load", "fan_max", "gpu_w", "gpu_cap_w")
+_FIELDS = (
+    "cpu", "gpu", "board", "drive_max", "load", "fan_max", "gpu_w", "gpu_cap_w", "gpu_fan",
+)  # fmt: skip
+# Per-fan RPM is stored as sample["fans"] = {key: rpm} and flattened to "fan:<key>".
+_FAN_PREFIX = "fan:"
+# Optional display names: TACHOMETER_FAN_LABELS="fan1=Rear exhaust,fan2=CPU,fan3=Front intake"
+FAN_LABELS_ENV = "TACHOMETER_FAN_LABELS"
 
 # (yellow at or above, red at or above), Celsius. Generic desktop guidance:
 # yellow is "worth a look if sustained", red sits a little under the point
@@ -121,6 +127,69 @@ def _read_fan_rpm_max(sys_class: Path) -> int | None:
             rpm = int(fan.read_text(encoding="utf-8").strip())
             best = rpm if best is None or rpm > best else best
     return best
+
+
+def _read_fans(sys_class: Path) -> dict[str, int]:
+    """RPM of every spinning fan, keyed `fanN` (`<chip>/fanN` when several chips report fans)."""
+    chips = [
+        chip
+        for chip in sorted((sys_class / "hwmon").glob("hwmon*"))
+        if any(chip.glob("fan*_input"))
+    ]
+    fans: dict[str, int] = {}
+    for chip in chips:
+        prefix = f"{_text(chip / 'name') or chip.name}/" if len(chips) > 1 else ""
+        for path in chip.glob("fan*_input"):
+            with contextlib.suppress(Exception):
+                rpm = int(path.read_text(encoding="utf-8").strip())
+                if rpm > 0:  # unconnected headers report 0
+                    fans[prefix + path.name.removesuffix("_input")] = rpm
+    return dict(sorted(fans.items(), key=lambda item: _natural(item[0])))
+
+
+def _natural(key: str) -> tuple[str, int]:
+    head = key.rstrip("0123456789")
+    return head, int(key[len(head) :] or 0)
+
+
+def fan_labels(keys: list[str], sys_class: Path = Path("/sys/class")) -> dict[str, str]:
+    """Display names: TACHOMETER_FAN_LABELS first, then hwmon fanN_label, then "Fan N"."""
+    configured = {}
+    for pair in os.environ.get(FAN_LABELS_ENV, "").split(","):
+        name, _, label = pair.partition("=")
+        if name.strip() and label.strip():
+            configured[name.strip()] = label.strip()
+    labels = {}
+    for key in keys:
+        fan = key.rsplit("/", 1)[-1]
+        if key in configured or fan in configured:
+            labels[key] = configured.get(key) or configured[fan]
+            continue
+        hw = ""
+        for chip in (sys_class / "hwmon").glob("hwmon*"):
+            if "/" in key and _text(chip / "name") != key.split("/", 1)[0]:
+                continue
+            hw = _text(chip / f"{fan}_label") or hw
+        labels[key] = hw or f"Fan {fan.removeprefix('fan')}"
+    return labels
+
+
+def _read_gpu_fan() -> float | None:
+    tool = shutil.which("nvidia-smi")
+    if not tool:
+        return None
+    with contextlib.suppress(Exception):
+        out = subprocess.run(
+            [tool, "--query-gpu=fan.speed", "--format=csv,noheader,nounits"],
+            capture_output=True,
+            text=True,
+            timeout=5,
+            check=False,
+        )
+        speeds = [float(v) for v in out.stdout.split() if v.replace(".", "", 1).isdigit()]
+        if out.returncode == 0 and speeds:
+            return max(speeds)
+    return None
 
 
 def _read_gpu_temp() -> float | None:
@@ -317,6 +386,7 @@ def collect_sample(
     platform: str | None = None,
     macos_run=_run_plist,
     limits_reader=None,
+    gpu_fan_reader=_read_gpu_fan,
 ) -> dict[str, Any]:
     """One reading of everything the page charts. Missing sensors are None."""
     stamp = now if now is not None else time.time()
@@ -349,6 +419,8 @@ def collect_sample(
         "drive_max": max(drives.values()) if drives else None,
         "drives": drives,
         "fan_max": _read_fan_rpm_max(sys_class),
+        "fans": {} if macos else _read_fans(sys_class),
+        "gpu_fan": None if macos else gpu_fan_reader(),
     }
     caps: dict[str, Any] = {}
     if not macos:
@@ -395,8 +467,7 @@ def hourly_path(tachometer_root: Path) -> Path:
 def _fold(bucket: dict[str, Any], sample: dict[str, Any]) -> None:
     """Merge one raw sample into an hourly bucket, field by field."""
     bucket["n"] = bucket.get("n", 0) + 1
-    for name in _FIELDS:
-        value = sample.get(name)
+    for name, value in _chartable(sample).items():
         if not isinstance(value, int | float) or isinstance(value, bool):
             continue
         stat = bucket.setdefault(name, {"min": value, "max": value, "sum": 0.0, "n": 0})
@@ -404,6 +475,17 @@ def _fold(bucket: dict[str, Any], sample: dict[str, Any]) -> None:
         stat["max"] = max(stat["max"], value)
         stat["sum"] = round(stat["sum"] + value, 3)
         stat["n"] += 1
+
+
+def _chartable(sample: dict[str, Any]) -> dict[str, Any]:
+    """The sample's numeric series, per-fan RPM flattened to "fan:<key>"."""
+    values = {name: sample.get(name) for name in _FIELDS}
+    for key, rpm in (sample.get("fans") or {}).items():
+        values[_FAN_PREFIX + key] = rpm
+    for key, value in sample.items():
+        if key.startswith(_FAN_PREFIX):  # already flattened (an hourly point)
+            values[key] = value
+    return values
 
 
 def _hour(ts: float) -> int:
@@ -476,7 +558,8 @@ def hourly_series(
         if ts < _hour(since):
             continue
         point: dict[str, Any] = {"ts": ts}
-        for name in _FIELDS:
+        names = list(_FIELDS) + sorted(k for k in bucket if k.startswith(_FAN_PREFIX))
+        for name in names:
             stat = bucket.get(name)
             if not stat or not stat.get("n"):
                 point[name] = None
@@ -561,8 +644,13 @@ def build_payload(
         points = hourly_series(all_samples, load_hourly(hourly_path(tachometer_root)), since=since)
     else:
         resolution = "5min"
-        points = [{k: s.get(k) for k in ("ts", *_FIELDS)} for s in all_samples if s["ts"] >= since]
+        points = [{"ts": s["ts"], **_chartable(s)} for s in all_samples if s["ts"] >= since]
+    fan_keys = sorted(
+        {k.removeprefix(_FAN_PREFIX) for p in points for k in p if k.startswith(_FAN_PREFIX)},
+        key=_natural,
+    )
     return {
+        "fan_labels": fan_labels(fan_keys),
         "range": range_key,
         "resolution": resolution,
         "limits": LIMITS,
@@ -577,10 +665,10 @@ _PAGE = """<!doctype html>
 <title>Tachometer · Thermal</title>
 <style>
 :root{--plane:#f9f9f7;--surface:#fcfcfb;--ink:#0b0b0b;--ink2:#52514e;--rule:#e6e5e1;
- --s1:#2a78d6;--s2:#eb6834;--s3:#1baf7a;--s4:#eda100;
+ --s1:#2a78d6;--s2:#eb6834;--s3:#1baf7a;--s4:#eda100;--s5:#8a5cd6;--s6:#d6409f;
  --good:#0ca30c;--warning:#b97b00;--critical:#d03b3b;--none:#8a8983}
 @media (prefers-color-scheme:dark){:root{--plane:#0d0d0d;--surface:#1a1a19;--ink:#f0efec;
- --ink2:#c3c2b7;--rule:#32322f;--s1:#3987e5;--s2:#d95926;--s3:#199e70;--s4:#c98500;
+ --ink2:#c3c2b7;--rule:#32322f;--s1:#3987e5;--s2:#d95926;--s3:#199e70;--s4:#c98500;--s5:#a07ae8;--s6:#e05aab;
  --warning:#fab219;--none:#8a8983}}
 *{box-sizing:border-box}
 body{margin:0;padding:20px 16px 40px;background:var(--plane);color:var(--ink);
@@ -620,12 +708,23 @@ table{border-collapse:collapse;width:100%;font-size:.78rem;font-variant-numeric:
 th,td{text-align:right;padding:3px 8px;border-bottom:1px solid var(--rule)}
 th:first-child,td:first-child{text-align:left}
 .limits td,.limits th{text-align:left}
+.controls{display:flex;flex-wrap:wrap;gap:10px 18px;align-items:end;margin-top:10px;font-size:.8rem}
+.controls form{display:flex;gap:6px;align-items:end}
+.controls label{display:flex;flex-direction:column;gap:3px;color:var(--ink2)}
+.controls input,.controls select{font:inherit;padding:4px 6px;border:1px solid var(--rule);border-radius:6px;
+ background:var(--plane);color:var(--ink)}
+.controls input{width:6.5em}
+.controls button{font:inherit;padding:4px 12px;border:1px solid var(--ink);border-radius:6px;
+ background:var(--ink);color:var(--surface);cursor:pointer}
+.note{font-size:.78rem;color:var(--ink2);margin-top:8px}
+.msg{padding:8px 12px;border-radius:8px;margin-bottom:12px;font-size:.85rem;border:1px solid var(--rule)}
+.msg.ok{border-color:var(--good)}.msg.err{border-color:var(--critical)}
 summary{cursor:pointer;color:var(--ink2);font-size:.8rem}
 </style></head><body><main>
 <h1>Thermal history</h1>
 <div class="sub"><a href="/">&larr; Dashboard</a> &middot; __AGE__ &middot;
  <a href="/api/thermal?range=__RANGE__">JSON</a></div>
-<div class="chips">__CHIPS__</div>
+__MESSAGE__<div class="chips">__CHIPS__</div>
 <div class="filters" role="navigation" aria-label="Time range">__FILTERS__</div>
 <div class="card"><h2>Temperature</h2>
  <div class="sub" style="margin:0">Degrees Celsius, __TEMP_NOTE__</div>
@@ -634,6 +733,11 @@ __LIMITERS__
 <div class="card" id="power-card"><h2>GPU power</h2>
  <div class="sub" style="margin:0">Watts drawn against the power cap (the rev limiter)__POWER_NOTE__</div>
  <div id="power"></div><div class="tip" id="tip-power"></div></div>
+<div class="card" id="fans-card"><h2>Fans</h2>
+ <div class="sub" style="margin:0">Revolutions per minute for each spinning fan__FAN_NOTE__</div>
+ <div class="legend" id="fan-legend"></div><div id="fans"></div><div class="tip" id="tip-fans"></div>
+ <div id="gpufan-wrap"><div class="sub" style="margin:10px 0 0">GPU fan, percent of its maximum</div>
+ <div id="gpufan"></div><div class="tip" id="tip-gpufan"></div></div></div>
 <div class="card"><h2>Load per CPU thread</h2>
  <div class="sub" style="margin:0">1-minute load average divided by thread count; 1.0 is fully busy__LOAD_NOTE__</div>
  <div id="load"></div><div class="tip" id="tip-load"></div></div>
@@ -689,6 +793,13 @@ function chart(host,tipId,series,opts){
 const shown=chart('temp','tip-temp',SERIES,{h:300,step:10,min:60,endLabels:true,label:'Temperature over time',fmt:v=>Math.round(v)+'\\u00b0'})||[];
 document.getElementById('legend').innerHTML=shown.map(s=>`<span><i style="background:var(${s[2]})"></i>${s[1]}</span>`).join('');
 if(!chart('power','tip-power',[['gpu_w','Draw','--s2'],['gpu_cap_w','Cap','--s3']],{h:170,step:50,min:100,zero:true,endLabels:true,label:'GPU power draw and cap over time',fmt:v=>Math.round(v)+' W'}))document.getElementById('power-card').style.display='none';
+const FANS=[...new Set(S.flatMap(p=>Object.keys(p).filter(k=>k.startsWith('fan:'))))]
+  .map((k,i)=>[k,(D.fan_labels||{})[k.slice(4)]||k.slice(4),'--s'+(i%6+1)]);
+// Per-fan readings start with this version; the fastest-fan line carries the older history.
+const fanShown=chart('fans','tip-fans',[...FANS,['fan_max','Fastest fan','--s6']],{h:220,step:500,min:1000,zero:true,endLabels:true,label:'Fan speeds over time',fmt:v=>Math.round(v)+' rpm'});
+document.getElementById('fan-legend').innerHTML=(fanShown||[]).map(s=>`<span><i style="background:var(${s[2]})"></i>${s[1]}</span>`).join('');
+if(!chart('gpufan','tip-gpufan',[['gpu_fan','GPU fan','--s2']],{h:130,step:25,min:100,zero:true,endLabels:true,label:'GPU fan speed over time',fmt:v=>Math.round(v)+'%'}))document.getElementById('gpufan-wrap').style.display='none';
+if(!fanShown&&document.getElementById('gpufan-wrap').style.display==='none')document.getElementById('fans-card').style.display='none';
 chart('load','tip-load',[['load','Load','--s1']],{h:150,step:0.5,min:1,zero:true,endLabels:false,label:'Load per CPU thread over time',fmt:v=>(+v).toFixed(2)});
 const rows=S.slice(-200).reverse().map(p=>'<tr><td>'+fmtT(p.ts)+'</td>'+['cpu','gpu','board','drive_max'].map(k=>'<td>'+(p[k]==null?'–':Math.round(p[k]))+'</td>').join('')+'<td>'+(p.load==null?'–':p.load.toFixed(2))+'</td><td>'+(p.fan_max==null?'–':p.fan_max)+'</td></tr>').join('');
 document.getElementById('table').innerHTML='<table><thead><tr><th>Time</th><th>CPU °C</th><th>GPU °C</th><th>Board °C</th><th>Hottest drive °C</th><th>Load</th><th>Fan max RPM</th></tr></thead><tbody>'+rows+'</tbody></table>';
@@ -696,7 +807,68 @@ document.getElementById('table').innerHTML='<table><thead><tr><th>Time</th><th>C
 """
 
 
-def _limiter_card(rows: list[dict[str, str]]) -> str:
+def _message(message: str | None, ok: bool) -> str:
+    if not message:
+        return ""
+    return f'<div class="msg {"ok" if ok else "err"}" role="status">{html.escape(message)}</div>'
+
+
+def _controls_form(limiters: dict[str, Any], controls: dict[str, Any], range_key: str) -> str:
+    """The "Set limiters" forms, or how to enable them when the helper is missing."""
+    if not controls.get("available"):
+        reason = controls.get("reason") or "unavailable"
+        return (
+            '<div class="note">Changing limiters here is off ('
+            f"{html.escape(reason)}). Enable it with fedora-debugg's "
+            "<code>sudo ./scripts/install_limiter_controls.sh --user $USER</code>.</div>"
+        )
+    forms = []
+    hidden = f'<input type="hidden" name="range" value="{html.escape(range_key)}">'
+    gpus = limiters.get("gpu") or []
+    if gpus:
+        gpu = gpus[0]
+        low, high = gpu.get("min_limit_w") or 1, gpu.get("max_limit_w") or 2000
+        current = gpu.get("power_limit_w") or gpu.get("default_limit_w") or high
+        default = gpu.get("default_limit_w")
+        forms.append(
+            '<form method="post" action="/thermal/limiters">'
+            f'{hidden}<input type="hidden" name="setting" value="gpu_power">'
+            f'<label>GPU power cap (W)<input type="number" name="value" '
+            f'min="{low:.0f}" max="{high:.0f}" step="5" value="{current:.0f}" required></label>'
+            "<button>Set</button></form>"
+            f'<span class="note" style="margin:0">{low:.0f}–{high:.0f} W'
+            + (f", stock {default:.0f} W" if default else "")
+            + "</span>"
+        )
+    profiles = controls.get("profiles") or []
+    current_profile = (limiters.get("profile") or {}).get("name")
+    if profiles:
+        options = "".join(
+            f"<option{' selected' if p == current_profile else ''}>{html.escape(p)}</option>"
+            for p in profiles
+        )
+        forms.append(
+            '<form method="post" action="/thermal/limiters">'
+            f'{hidden}<input type="hidden" name="setting" value="profile">'
+            f'<label>Power profile<select name="value">{options}</select></label>'
+            "<button>Set</button></form>"
+        )
+    if not forms:
+        return ""
+    return (
+        '<div class="controls">'
+        + "".join(forms)
+        + '</div><div class="note">Changes apply immediately and survive reboots '
+        "(GPU cap through fedora-debugg's boot unit, profile through tuned).</div>"
+    )
+
+
+def _limiter_card(
+    rows: list[dict[str, str]],
+    limiters: dict[str, Any] | None = None,
+    controls: dict[str, Any] | None = None,
+    range_key: str = "24h",
+) -> str:
     """Latest caps, one row each, with a dot when one is set or currently biting."""
     if not rows:
         return ""
@@ -713,7 +885,9 @@ def _limiter_card(rows: list[dict[str, str]]) -> str:
         "sample. A green dot is a limiter that is set; amber means it is holding the hardware "
         "back right now.</div>"
         '<table class="limits"><thead><tr><th>Limiter</th><th>Setting</th><th>Now</th></tr>'
-        f"</thead><tbody>{body}</tbody></table></div>"
+        f"</thead><tbody>{body}</tbody></table>"
+        + _controls_form(limiters or {}, controls or {}, range_key)
+        + "</div>"
     )
 
 
@@ -727,7 +901,15 @@ def _fmt_age(seconds: int | None) -> str:
     return f"latest sample {seconds // 3600} h ago"
 
 
-def render_page(tachometer_root: Path, range_key: str = "24h", *, now: float | None = None) -> str:
+def render_page(
+    tachometer_root: Path,
+    range_key: str = "24h",
+    *,
+    now: float | None = None,
+    message: str | None = None,
+    message_ok: bool = True,
+    controls: dict[str, Any] | None = None,
+) -> str:
     payload = build_payload(tachometer_root, range_key, now=now)
     status = payload["status"]
     chips = []
@@ -770,6 +952,16 @@ def render_page(tachometer_root: Path, range_key: str = "24h", *, now: float | N
         )
         .replace("__LOAD_NOTE__", " (hourly mean)" if hourly else "")
         .replace("__POWER_NOTE__", "; hourly maximum" if hourly else "")
-        .replace("__LIMITERS__", _limiter_card(status.get("limiter_rows") or []))
+        .replace("__FAN_NOTE__", "; hourly maximum" if hourly else "")
+        .replace(
+            "__LIMITERS__",
+            _limiter_card(
+                status.get("limiter_rows") or [],
+                status.get("limiters") or {},
+                controls if controls is not None else rev_limiters.controls_status(),
+                payload["range"],
+            ),
+        )
+        .replace("__MESSAGE__", _message(message, message_ok))
         .replace("__DATA__", data)
     )

@@ -477,3 +477,55 @@ def test_temperature_light_thresholds():
     assert _temperature_light(60.0, 80.0, 90.0) == "green"
     assert _temperature_light(80.0, 80.0, 90.0) == "yellow"
     assert _temperature_light(98.0, 80.0, 90.0) == "red"
+
+
+@pytest.mark.unit
+def test_thermal_limiter_post_applies_resamples_and_redirects(tmp_path, monkeypatch):
+    import threading
+    import urllib.error
+    import urllib.request
+    from http.server import HTTPServer
+
+    from tachometer import limiters, thermal
+    from tachometer.server import _Handler
+
+    applied = []
+    monkeypatch.setattr(
+        limiters,
+        "apply_setting",
+        lambda kind, value: applied.append((kind, value)) or (True, "set"),
+    )
+    monkeypatch.setattr(thermal, "collect_sample", lambda: {"ts": 1000, "cpu": 50.0})
+    handler = type("H", (_Handler,), {"tachometer_root": tmp_path})
+    httpd = HTTPServer(("127.0.0.1", 0), handler)
+    threading.Thread(target=httpd.serve_forever, daemon=True).start()
+    base = f"http://127.0.0.1:{httpd.server_address[1]}"
+
+    class NoRedirect(urllib.request.HTTPRedirectHandler):
+        def redirect_request(self, *_args, **_kwargs):
+            return None
+
+    opener = urllib.request.build_opener(NoRedirect)
+
+    def post(origin):
+        request = urllib.request.Request(
+            base + "/thermal/limiters",
+            data=b"setting=gpu_power&value=230&range=90d",
+            headers={"Origin": origin},
+        )
+        try:
+            return opener.open(request)
+        except urllib.error.HTTPError as exc:
+            return exc
+
+    try:
+        response = post(base)
+        assert response.status == 303
+        assert response.headers["Location"] == "/thermal?range=90d&msg=set&ok=1"
+        assert applied == [("gpu_power", "230")]
+        assert thermal.load_samples(thermal.samples_path(tmp_path))[-1]["cpu"] == 50.0
+
+        assert post("https://evil.example").status == 403
+        assert applied == [("gpu_power", "230")]
+    finally:
+        httpd.shutdown()

@@ -16,6 +16,8 @@ sources are left out rather than guessed.
 from __future__ import annotations
 
 import contextlib
+import os
+import re
 import shutil
 import subprocess
 from pathlib import Path
@@ -261,3 +263,80 @@ def describe(limiters: dict[str, Any]) -> list[dict[str, str]]:
             }
         )
     return rows
+
+
+# ---------------------------------------------------------------------------
+# Changing limiters from the /thermal page
+# ---------------------------------------------------------------------------
+
+# Root-owned helper installed by fedora-debugg's install_limiter_controls.sh,
+# runnable through a sudoers rule without a password. It validates every value
+# itself; the checks here only give the page a clear message sooner.
+HELPER_ENV = "TACHOMETER_LIMITER_HELPER"
+DEFAULT_HELPER = "/usr/local/sbin/fedora-debugg-limiter"
+_PROFILE_NAME = re.compile(r"^[a-z0-9][a-z0-9-]{0,63}$")
+
+
+def helper_path() -> str:
+    return os.environ.get(HELPER_ENV, "").strip() or DEFAULT_HELPER
+
+
+def tuned_profiles(run=subprocess.run) -> list[str]:
+    """Profiles tuned offers (no root needed), in its own order."""
+    if not shutil.which("tuned-adm"):
+        return []
+    with contextlib.suppress(Exception):
+        out = run(["tuned-adm", "list"], capture_output=True, text=True, timeout=10, check=False)
+        return [
+            line.split()[1]
+            for line in out.stdout.splitlines()
+            if line.startswith("- ") and len(line.split()) > 1
+        ]
+    return []
+
+
+def controls_status(run=subprocess.run, exists=os.path.exists) -> dict[str, Any]:
+    """Whether the page may change limiters, and the choices it can offer."""
+    helper = helper_path()
+    status: dict[str, Any] = {"available": False, "helper": helper, "profiles": []}
+    if not exists(helper):
+        status["reason"] = "not installed"
+        return status
+    with contextlib.suppress(Exception):
+        out = run(
+            ["sudo", "-n", helper, "check"], capture_output=True, text=True, timeout=10, check=False
+        )
+        if out.returncode == 0:
+            status["available"] = True
+            status["profiles"] = tuned_profiles(run)
+            return status
+    status["reason"] = "no passwordless sudo rule for this user"
+    return status
+
+
+def apply_setting(kind: str, value: str, run=subprocess.run) -> tuple[bool, str]:
+    """Run the helper for one change; returns (succeeded, message for the page)."""
+    value = value.strip()
+    if kind == "gpu_power":
+        if not value.isdigit() or not 10 <= int(value) <= 2000:
+            return False, "Enter the GPU power cap as whole watts."
+        args = ["gpu-power", str(int(value))]
+    elif kind == "profile":
+        if not _PROFILE_NAME.match(value):
+            return False, "Choose a power profile from the list."
+        args = ["profile", value]
+    else:
+        return False, "Unknown setting."
+    try:
+        out = run(
+            ["sudo", "-n", helper_path(), *args],
+            capture_output=True,
+            text=True,
+            timeout=90,
+            check=False,
+        )
+    except (OSError, subprocess.SubprocessError) as exc:
+        return False, f"Could not run the limiter helper: {exc}"
+    lines = [line for line in (out.stdout + "\n" + out.stderr).splitlines() if line.strip()]
+    message = lines[-1].removeprefix("fedora-debugg-limiter: ") if lines else "Done."
+    return out.returncode == 0, message
