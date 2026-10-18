@@ -129,6 +129,24 @@ bash scripts/sample_host.sh
 
 The dashboard charts the history at `/thermal`.
 
+Each sample also records the host's **rev limiters**, the caps that bound how
+hard the machine may run (`src/tachometer/limiters.py`, Linux, no root needed):
+
+- GPU power cap per NVIDIA GPU against its default and min/max range, live
+  power draw, persistence mode, and which limits are holding the clocks down
+  right now (power cap, thermal, power brake) from `nvidia-smi`'s clock event
+  reasons;
+- CPU package power limits from Intel RAPL (`long_term` PL1 and `short_term`
+  PL2, with their time windows);
+- CPU frequency ceiling against the hardware maximum, governor, energy
+  performance preference, turbo and `intel_pstate` max performance percentage;
+- the active power profile from tuned or power-profiles-daemon.
+
+`/thermal` shows them in a "Rev limiters" table (green when a cap is set, amber
+when one is biting) and charts GPU power draw against the cap; `/api/thermal`
+returns them under `status.limiters`. The caps themselves are set elsewhere,
+for example fedora-debugg's `install_gpu_power_limit.sh` for the GPU.
+
 To add SMART drive temperatures and a Drive health light, set
 `TACHOMETER_SMART_DIR` for the sampler to a directory that a separate
 root-run collector fills with one `<drive>.jsonl` per drive. Each line is one

@@ -28,6 +28,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from . import limiters as rev_limiters
 from .profile import _read_cpu_temp
 
 SAMPLES_NAME = "host-samples.jsonl"
@@ -40,7 +41,7 @@ RANGES = {"6h": 6, "24h": 24, "7d": 168, "30d": 720, "90d": 2160}
 # Ranges long enough that five-minute points stop being readable are drawn
 # from hourly buckets instead.
 HOURLY_RANGES = ("30d", "90d")
-_FIELDS = ("cpu", "gpu", "board", "drive_max", "load", "fan_max")
+_FIELDS = ("cpu", "gpu", "board", "drive_max", "load", "fan_max", "gpu_w", "gpu_cap_w")
 
 # (yellow at or above, red at or above), Celsius. Generic desktop guidance:
 # yellow is "worth a look if sustained", red sits a little under the point
@@ -315,6 +316,7 @@ def collect_sample(
     smart_dir: Path | None = None,
     platform: str | None = None,
     macos_run=_run_plist,
+    limits_reader=None,
 ) -> dict[str, Any]:
     """One reading of everything the page charts. Missing sensors are None."""
     stamp = now if now is not None else time.time()
@@ -348,6 +350,16 @@ def collect_sample(
         "drives": drives,
         "fan_max": _read_fan_rpm_max(sys_class),
     }
+    caps: dict[str, Any] = {}
+    if not macos:
+        caps = (limits_reader or (lambda: rev_limiters.read_limiters(sys_class)))()
+    gpus = caps.get("gpu") or []
+    draws = [g["power_draw_w"] for g in gpus if g.get("power_draw_w") is not None]
+    limits = [g["power_limit_w"] for g in gpus if g.get("power_limit_w") is not None]
+    sample["gpu_w"] = round(sum(draws), 1) if draws else None
+    sample["gpu_cap_w"] = round(sum(limits), 1) if limits else None
+    if caps:
+        sample["limiters"] = caps
     if power:
         for field, key in (("cpu", "cpu_die_c"), ("gpu", "gpu_die_c"), ("fan_max", "fan_rpm")):
             if sample[field] is None and isinstance(power.get(key), int | float):
@@ -532,6 +544,8 @@ def latest_status(samples: list[dict[str, Any]], *, now: float | None = None) ->
         "age_seconds": int((now if now is not None else time.time()) - last["ts"]),
         "load": last.get("load"),
         "fan_max": last.get("fan_max"),
+        "limiters": last.get("limiters") or {},
+        "limiter_rows": rev_limiters.describe(last.get("limiters") or {}),
     }
 
 
@@ -605,6 +619,7 @@ svg{display:block;width:100%;height:auto;overflow:visible}
 table{border-collapse:collapse;width:100%;font-size:.78rem;font-variant-numeric:tabular-nums}
 th,td{text-align:right;padding:3px 8px;border-bottom:1px solid var(--rule)}
 th:first-child,td:first-child{text-align:left}
+.limits td,.limits th{text-align:left}
 summary{cursor:pointer;color:var(--ink2);font-size:.8rem}
 </style></head><body><main>
 <h1>Thermal history</h1>
@@ -615,6 +630,10 @@ summary{cursor:pointer;color:var(--ink2);font-size:.8rem}
 <div class="card"><h2>Temperature</h2>
  <div class="sub" style="margin:0">Degrees Celsius, __TEMP_NOTE__</div>
  <div class="legend" id="legend"></div><div id="temp"></div><div class="tip" id="tip-temp"></div></div>
+__LIMITERS__
+<div class="card" id="power-card"><h2>GPU power</h2>
+ <div class="sub" style="margin:0">Watts drawn against the power cap (the rev limiter)__POWER_NOTE__</div>
+ <div id="power"></div><div class="tip" id="tip-power"></div></div>
 <div class="card"><h2>Load per CPU thread</h2>
  <div class="sub" style="margin:0">1-minute load average divided by thread count; 1.0 is fully busy__LOAD_NOTE__</div>
  <div id="load"></div><div class="tip" id="tip-load"></div></div>
@@ -669,11 +688,33 @@ function chart(host,tipId,series,opts){
   box.append(svg);return have}
 const shown=chart('temp','tip-temp',SERIES,{h:300,step:10,min:60,endLabels:true,label:'Temperature over time',fmt:v=>Math.round(v)+'\\u00b0'})||[];
 document.getElementById('legend').innerHTML=shown.map(s=>`<span><i style="background:var(${s[2]})"></i>${s[1]}</span>`).join('');
+if(!chart('power','tip-power',[['gpu_w','Draw','--s2'],['gpu_cap_w','Cap','--s3']],{h:170,step:50,min:100,zero:true,endLabels:true,label:'GPU power draw and cap over time',fmt:v=>Math.round(v)+' W'}))document.getElementById('power-card').style.display='none';
 chart('load','tip-load',[['load','Load','--s1']],{h:150,step:0.5,min:1,zero:true,endLabels:false,label:'Load per CPU thread over time',fmt:v=>(+v).toFixed(2)});
 const rows=S.slice(-200).reverse().map(p=>'<tr><td>'+fmtT(p.ts)+'</td>'+['cpu','gpu','board','drive_max'].map(k=>'<td>'+(p[k]==null?'–':Math.round(p[k]))+'</td>').join('')+'<td>'+(p.load==null?'–':p.load.toFixed(2))+'</td><td>'+(p.fan_max==null?'–':p.fan_max)+'</td></tr>').join('');
 document.getElementById('table').innerHTML='<table><thead><tr><th>Time</th><th>CPU °C</th><th>GPU °C</th><th>Board °C</th><th>Hottest drive °C</th><th>Load</th><th>Fan max RPM</th></tr></thead><tbody>'+rows+'</tbody></table>';
 </script></main></body></html>
 """
+
+
+def _limiter_card(rows: list[dict[str, str]]) -> str:
+    """Latest caps, one row each, with a dot when one is set or currently biting."""
+    if not rows:
+        return ""
+    body = "".join(
+        "<tr><td>"
+        f'<span class="dot {"unknown" if row["light"] == "none" else row["light"]}"></span> '
+        f"{html.escape(row['limiter'])}</td><td>{html.escape(row['setting'])}</td>"
+        f"<td>{html.escape(row['state'])}</td></tr>"
+        for row in rows
+    )
+    return (
+        '<div class="card"><h2>Rev limiters</h2>'
+        '<div class="sub" style="margin:0 0 6px">The caps this host runs under, from the latest '
+        "sample. A green dot is a limiter that is set; amber means it is holding the hardware "
+        "back right now.</div>"
+        '<table class="limits"><thead><tr><th>Limiter</th><th>Setting</th><th>Now</th></tr>'
+        f"</thead><tbody>{body}</tbody></table></div>"
+    )
 
 
 def _fmt_age(seconds: int | None) -> str:
@@ -728,5 +769,7 @@ def render_page(tachometer_root: Path, range_key: str = "24h", *, now: float | N
             "hourly maximum" if hourly else "one sample about every five minutes",
         )
         .replace("__LOAD_NOTE__", " (hourly mean)" if hourly else "")
+        .replace("__POWER_NOTE__", "; hourly maximum" if hourly else "")
+        .replace("__LIMITERS__", _limiter_card(status.get("limiter_rows") or []))
         .replace("__DATA__", data)
     )
