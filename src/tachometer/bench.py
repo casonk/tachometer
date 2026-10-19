@@ -99,6 +99,9 @@ class BenchConfig:
     # drawing ~120-140 W at 0 % load, so GPU stages would start warm.
     stop_at_boundary: dict[str, str] = field(default_factory=dict)
     boundary_wait_minutes: int = 60
+    # Units that lose little when stopped (e.g. a worker that checkpoints its
+    # progress) are stopped at once and started again after the run.
+    stop_units: list[str] = field(default_factory=list)
 
 
 def load_config(path: Path) -> BenchConfig:
@@ -107,7 +110,7 @@ def load_config(path: Path) -> BenchConfig:
     data = tomllib.loads(path.read_text())
     config = BenchConfig()
     config.volumes = {str(k): str(v) for k, v in (data.get("volumes") or {}).items()}
-    for key in ("pause_units", "busy_units"):
+    for key in ("pause_units", "busy_units", "stop_units"):
         if key in data:
             setattr(config, key, [str(u) for u in data[key]])
     config.torch_python = str(data.get("torch_python", ""))
@@ -485,7 +488,11 @@ def wait_for_boundary(
 
 
 def pause_for_bench(unit: str, config: BenchConfig) -> str | None:
-    """Stop a unit at a job boundary when it has a status file, otherwise freeze it."""
+    """Stop a unit at once if it is in ``stop_units``, at a job boundary when it has
+    a status file, otherwise freeze it."""
+    if unit in config.stop_units and unit_is_active(unit):
+        _systemctl("stop", unit)
+        return "stopped"
     status_file = config.stop_at_boundary.get(unit)
     if (
         status_file

@@ -15,6 +15,11 @@ torch_python = ""
 # Seconds to let the machine cool and settle after pausing units.
 settle_seconds = 120
 
+# Units in pause_units that lose little when stopped (a worker that resumes
+# from a checkpoint, like clockwork-upscale's chunked renders): stopped at once
+# instead of frozen, so the GPU idles before the GPU stages.
+stop_units = []
+
 # Minutes to wait for a stop_at_boundary unit to finish its current job
 # before falling back to freezing it.
 boundary_wait_minutes = 60
