@@ -2007,9 +2007,22 @@ class _Handler(BaseHTTPRequestHandler):
 
         range_key = form.get("range", ["24h"])[0]
         range_key = range_key if range_key in thermal.RANGES else "24h"
-        ok, message = limiters.apply_setting(
-            form.get("setting", [""])[0], form.get("value", [""])[0]
-        )
+        setting = form.get("setting", [""])[0]
+        value = form.get("value", [""])[0]
+        if setting == "disk":
+            # Only fields that differ from what the page showed are applied.
+            changed = [
+                (
+                    form.get(field, [""])[0]
+                    if form.get(field, [""])[0] != form.get(f"was_{field}", [""])[0]
+                    else ""
+                )
+                for field in ("scheduler", "read_ahead")
+            ]
+            value = "|".join([form.get("dev", [""])[0], *changed])
+        elif setting == "disk_reset":
+            value = form.get("dev", [""])[0]
+        ok, message = limiters.apply_setting(setting, value)
         if ok:
             # Record the new state now instead of waiting up to five minutes.
             with contextlib.suppress(Exception):

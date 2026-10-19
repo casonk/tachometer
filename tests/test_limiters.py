@@ -363,6 +363,7 @@ def test_disk_limits_report_scheduler_read_ahead_and_type(tmp_path):
         "model": "ST16000NT001",
         "kind": "hdd",
         "scheduler": "bfq",
+        "schedulers": ["none", "mq-deadline", "kyber", "bfq"],
         "read_ahead_kb": 8192,
     }
     assert disks["nvme0n1"]["kind"] == "nvme" and disks["nvme0n1"]["scheduler"] == "none"
@@ -448,8 +449,8 @@ def test_disk_rows_include_the_volumes_reads_go_through(tmp_path):
 
     disks = {d["dev"]: d for d in limiters.disk_limits(block)}
 
-    assert disks["nvme0n1"]["volumes"] == [{"name": "4tb-m2", "read_ahead_kb": 512}]
-    assert disks["sda"]["volumes"] == [{"name": "4tb-sata", "read_ahead_kb": 128}]
+    assert disks["nvme0n1"]["volumes"] == [{"name": "4tb-m2", "dev": "dm-2", "read_ahead_kb": 512}]
+    assert disks["sda"]["volumes"] == [{"name": "4tb-sata", "dev": "dm-1", "read_ahead_kb": 128}]
     assert "volumes" not in disks["sdb"]
     rows = {r["limiter"]: r for r in limiters.describe({"disks": list(disks.values())})}
     assert rows["Disk I/O — nvme0n1 WD SN750 (NVMe)"]["setting"] == (
@@ -524,3 +525,53 @@ def test_nic_rows_show_ring_queues_and_card_drops(tmp_path):
     assert row["setting"] == "1000 Mb/s, 1 queue, ring 256/256 (hardware maximum)"
     assert row["state"] == "no packets lost by the card; 2 link changes since boot"
     assert row["light"] == "green"
+
+
+def test_disk_settings_validate_then_call_the_helper(monkeypatch):
+    monkeypatch.setenv(limiters.HELPER_ENV, "/opt/helper")
+    run = FakeRun(stdout="done\n")
+
+    assert limiters.apply_setting("disk", "sdb|mq-deadline|4096", run=run)[0] is True
+    assert run.calls[-2:] == [
+        ["sudo", "-n", "/opt/helper", "disk-scheduler", "sdb", "mq-deadline"],
+        ["sudo", "-n", "/opt/helper", "read-ahead", "sdb", "4096"],
+    ]
+    assert limiters.apply_setting("disk", "dm-2||2048", run=run)[0] is True
+    assert run.calls[-1][-3:] == ["read-ahead", "dm-2", "2048"]
+    assert limiters.apply_setting("disk_reset", "dm-2", run=run)[0] is True
+    assert run.calls[-1][-2:] == ["disk-reset", "dm-2"]
+
+    calls = len(run.calls)
+    for value in ("sdb1|bfq|", "../sdb|bfq|", "sdb|bfq;id|", "sdb||3000", "dm-2|bfq|", "sdb||"):
+        assert limiters.apply_setting("disk", value, run=run)[0] is False, value
+    assert limiters.apply_setting("disk_reset", "sda;id", run=run)[0] is False
+    assert len(run.calls) == calls  # nothing invalid reaches sudo
+
+
+def test_page_offers_disk_settings_with_each_disks_choices(tmp_path):
+    from tachometer import thermal as page
+
+    disks = [
+        {
+            "dev": "sdb",
+            "model": "ST16000NT001",
+            "kind": "hdd",
+            "scheduler": "bfq",
+            "schedulers": ["none", "mq-deadline", "bfq"],
+            "read_ahead_kb": 8192,
+            "volumes": [{"name": "16tb-sata", "dev": "dm-0", "read_ahead_kb": 3000}],
+        }
+    ]
+    html_text = page._controls_form({"disks": disks}, {"available": True}, "24h")
+
+    assert "<summary>Disk I/O settings</summary>" in html_text
+    assert (
+        "<option>none</option><option>mq-deadline</option><option selected>bfq</option>"
+        in html_text
+    )
+    assert '<option value="8192" selected>8 MiB</option>' in html_text
+    assert (
+        '<option value="3000" selected>3000 KiB</option>' in html_text
+    )  # odd current values stay visible
+    assert 'name="dev" value="dm-0"' in html_text and "volume 16tb-sata" in html_text
+    assert html_text.count('value="disk_reset"') == 2

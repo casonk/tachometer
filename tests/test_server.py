@@ -527,6 +527,24 @@ def test_thermal_limiter_post_applies_resamples_and_redirects(tmp_path, monkeypa
 
         assert post("https://evil.example").status == 403
         assert applied == [("gpu_power", "230")]
+
+        def post_form(body: bytes):
+            request = urllib.request.Request(
+                base + "/thermal/limiters", data=body, headers={"Origin": base}
+            )
+            try:
+                return opener.open(request)
+            except urllib.error.HTTPError as exc:
+                return exc
+
+        # Only the fields that changed from what the page showed are applied.
+        post_form(
+            b"setting=disk&dev=sdb&scheduler=bfq&was_scheduler=bfq"
+            b"&read_ahead=4096&was_read_ahead=8192&range=24h"
+        )
+        assert applied[-1] == ("disk", "sdb||4096")
+        post_form(b"setting=disk_reset&dev=dm-2&range=24h")
+        assert applied[-1] == ("disk_reset", "dm-2")
     finally:
         httpd.shutdown()
 

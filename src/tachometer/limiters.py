@@ -179,6 +179,7 @@ def disk_limits(sys_block: Path) -> list[dict[str, Any]]:
             continue
         queue = base / "queue"
         scheduler_line = _read(queue / "scheduler") or ""
+        schedulers = scheduler_line.replace("[", "").replace("]", "").split()
         match = re.search(r"\[([^\]]+)\]", scheduler_line)
         scheduler = match.group(1) if match else (scheduler_line or None)
         kind = (
@@ -191,6 +192,7 @@ def disk_limits(sys_block: Path) -> list[dict[str, Any]]:
             "model": " ".join((_read(base / "device" / "model") or "").split()) or None,
             "kind": kind,
             "scheduler": scheduler,
+            "schedulers": schedulers,
             "read_ahead_kb": _int(queue / "read_ahead_kb"),
         }
         volumes = _volumes(base)
@@ -209,7 +211,13 @@ def _volumes(base: Path) -> list[dict[str, Any]]:
     volumes = []
     for holder in sorted(holders, key=lambda p: p.name):
         name = _read(holder / "dm" / "name") or holder.name
-        volumes.append({"name": name, "read_ahead_kb": _int(holder / "queue" / "read_ahead_kb")})
+        volumes.append(
+            {
+                "name": name,
+                "dev": holder.name,
+                "read_ahead_kb": _int(holder / "queue" / "read_ahead_kb"),
+            }
+        )
     return volumes
 
 
@@ -493,6 +501,9 @@ def describe(limiters: dict[str, Any]) -> list[dict[str, str]]:
 HELPER_ENV = "TACHOMETER_LIMITER_HELPER"
 DEFAULT_HELPER = "/usr/local/sbin/fedora-debugg-limiter"
 _PROFILE_NAME = re.compile(r"^[a-z0-9][a-z0-9-]{0,63}$")
+_DISK_DEV = re.compile(r"^(sd[a-z]{1,3}|nvme\d{1,3}n\d{1,3})$")
+_VOLUME_DEV = re.compile(r"^dm-\d{1,4}$")
+READ_AHEAD_CHOICES = (128, 256, 512, 1024, 2048, 4096, 8192, 16384)
 
 
 def helper_path() -> str:
@@ -543,8 +554,14 @@ def apply_setting(kind: str, value: str, run=subprocess.run) -> tuple[bool, str]
         if not _PROFILE_NAME.match(value):
             return False, "Choose a power profile from the list."
         args = ["profile", value]
+    elif kind in ("disk", "disk_reset"):
+        return _apply_disk(kind, value, run)
     else:
         return False, "Unknown setting."
+    return _run_helper(args, run)
+
+
+def _run_helper(args: list[str], run=subprocess.run) -> tuple[bool, str]:
     try:
         out = run(
             ["sudo", "-n", helper_path(), *args],
@@ -558,3 +575,31 @@ def apply_setting(kind: str, value: str, run=subprocess.run) -> tuple[bool, str]
     lines = [line for line in (out.stdout + "\n" + out.stderr).splitlines() if line.strip()]
     message = lines[-1].removeprefix("fedora-debugg-limiter: ") if lines else "Done."
     return out.returncode == 0, message
+
+
+def _apply_disk(kind: str, value: str, run=subprocess.run) -> tuple[bool, str]:
+    """``value`` is "dev", or "dev|scheduler|read_ahead_kb" with empty parts left unchanged."""
+    dev, _, rest = value.partition("|")
+    if not (_DISK_DEV.match(dev) or _VOLUME_DEV.match(dev)):
+        return False, "Choose a disk or volume from the list."
+    if kind == "disk_reset":
+        return _run_helper(["disk-reset", dev], run)
+    scheduler, _, read_ahead = rest.partition("|")
+    steps = []
+    if scheduler:
+        if not _DISK_DEV.match(dev) or not _PROFILE_NAME.match(scheduler):
+            return False, "Choose a scheduler from the list."
+        steps.append(["disk-scheduler", dev, scheduler])
+    if read_ahead:
+        if not read_ahead.isdigit() or int(read_ahead) not in READ_AHEAD_CHOICES:
+            return False, "Choose a read-ahead from the list."
+        steps.append(["read-ahead", dev, read_ahead])
+    if not steps:
+        return False, "Nothing changed."
+    messages = []
+    for step in steps:
+        ok, message = _run_helper(step, run)
+        messages.append(message)
+        if not ok:
+            return False, message
+    return True, "; ".join(messages)
