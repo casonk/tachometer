@@ -7,6 +7,8 @@ import json
 import sys
 from pathlib import Path
 
+import pytest
+
 from tachometer import bench, thermal
 
 DAY = 86400.0
@@ -290,3 +292,17 @@ def test_thermal_card_shows_time_to_the_limit(tmp_path):
     assert "stopped at GPU 80 °C after 7 min (gpu stage)" in thermal.render_page(
         tmp_path, controls={}
     )
+
+
+def test_stop_units_are_stopped_at_once(monkeypatch):
+    actions = []
+    monkeypatch.setattr(bench, "unit_is_active", lambda unit: True)
+    monkeypatch.setattr(
+        bench,
+        "_systemctl",
+        lambda *args: actions.append(args) or bench.subprocess.CompletedProcess(args, 0),
+    )
+    monkeypatch.setattr(bench, "wait_for_boundary", lambda *a: pytest.fail("should not wait"))
+    config = bench.BenchConfig(stop_units=["up.service"], stop_at_boundary={"up.service": "/s"})
+    assert bench.pause_for_bench("up.service", config) == "stopped"
+    assert actions == [("stop", "up.service")]
