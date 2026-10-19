@@ -61,13 +61,25 @@ All originally-planned items are now implemented.
   `docs/tuning-log.md` / `docs/benchmarks/` when they back a decision (its
   `scripts/bench_cold_read.py` is the disk part to reuse).
 
+  Three tiers, all at night (2026-10-18), plus on demand before/after a change:
+  - **weekly — short** (~5–10 min): one cold-read pass per volume, a few
+    seconds of memory bandwidth, temperatures and clocks at idle. Catches
+    regressions (a drive dropping to a narrower link, a setting reset by a BIOS
+    update) without stressing anything.
+  - **monthly — mid** (~30–60 min): the disk suite with repeats and random
+    reads, memory bandwidth, and a short (~10 min) CPU and GPU load at the
+    configured caps.
+  - **quarterly — full** (a few hours): longer soak tests that reach thermal
+    steady state, the full repeat count for tight medians, and every
+    read-ahead/scheduler variant worth rechecking. Skipped and rescheduled if
+    the night is warm or the machine is busy, never run back to back.
+
   Scheduling has to be careful so a benchmark never overloads the PC:
   - run only in a quiet window (e.g. 02:00–05:00), only when load per thread,
     GPU utilisation and disk busy have been low for ~15 min, and never while
     someone is streaming from the library or the AI upscaler is rendering
     (pause `clockwork-upscale` for the run, resume after);
-  - one benchmark at a time (lock file), each with a hard time limit, and a long
-    gap between runs (weekly or monthly, plus on-demand);
+  - one benchmark at a time (lock file), each with a hard time limit;
   - honour the rev limiters: stop a test as soon as GPU or CPU temperature
     crosses the same limits the upscaler uses (72 / 78 °C) or a fan passes a
     set RPM, and record that it was cut short rather than retrying;
