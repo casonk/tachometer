@@ -943,13 +943,100 @@ def _controls_form(limiters: dict[str, Any], controls: dict[str, Any], range_key
             f'<label>Power profile<select name="value">{options}</select></label>'
             "<button>Set</button></form>"
         )
-    if not forms:
+    disks = _disk_forms(limiters.get("disks") or [], hidden)
+    if not forms and not disks:
         return ""
     return (
         '<div class="controls">'
         + "".join(forms)
         + '</div><div class="note">Changes apply immediately and survive reboots '
-        "(GPU cap through fedora-debugg's boot unit, profile through tuned).</div>"
+        "(GPU cap through fedora-debugg's boot unit, profile through tuned, disks through "
+        "a udev rule keyed by each drive's serial).</div>" + disks
+    )
+
+
+def _disk_forms(disks: list[dict[str, Any]], hidden: str) -> str:
+    """Scheduler and read-ahead per disk, read-ahead per volume, each with a reset."""
+    from .limiters import READ_AHEAD_CHOICES
+
+    def read_ahead_select(current: int | None) -> str:
+        choices = list(READ_AHEAD_CHOICES)
+        if current is not None and current not in choices:
+            choices = sorted([*choices, current])
+
+        def label(kb: int) -> str:
+            return f"{kb // 1024} MiB" if kb >= 1024 and kb % 1024 == 0 else f"{kb} KiB"
+
+        return (
+            '<label>Read-ahead<select name="read_ahead">'
+            + "".join(
+                f'<option value="{kb}"{" selected" if kb == current else ""}>{label(kb)}</option>'
+                for kb in choices
+            )
+            + "</select></label>"
+        )
+
+    def row(dev: str, label: str, fields: str, was: str) -> str:
+        target = f'<input type="hidden" name="dev" value="{html.escape(dev)}">'
+        return (
+            '<div class="controls">'
+            f'<form method="post" action="/thermal/limiters">{hidden}{target}{was}'
+            '<input type="hidden" name="setting" value="disk">'
+            f'<span style="min-width:15em">{html.escape(label)}</span>{fields}'
+            "<button>Set</button></form>"
+            f'<form method="post" action="/thermal/limiters">{hidden}{target}'
+            '<input type="hidden" name="setting" value="disk_reset">'
+            '<button title="Back to the defaults for this drive type">Reset</button></form>'
+            "</div>"
+        )
+
+    rows = []
+    for disk in disks:
+        current = disk.get("scheduler") or ""
+        options = "".join(
+            f"<option{' selected' if s == current else ''}>{html.escape(s)}</option>"
+            for s in disk.get("schedulers") or [current]
+            if s
+        )
+        was = (
+            f'<input type="hidden" name="was_scheduler" value="{html.escape(current)}">'
+            f'<input type="hidden" name="was_read_ahead" value="{disk.get("read_ahead_kb") or ""}">'
+        )
+        label = f"{disk['dev']}" + (f" {disk['model']}" if disk.get("model") else "")
+        rows.append(
+            row(
+                disk["dev"],
+                label,
+                f'<label>Scheduler<select name="scheduler">{options}</select></label>'
+                + read_ahead_select(disk.get("read_ahead_kb")),
+                was,
+            )
+        )
+        for volume in disk.get("volumes") or []:
+            if not volume.get("dev"):
+                continue
+            was = (
+                '<input type="hidden" name="was_scheduler" value="">'
+                f'<input type="hidden" name="was_read_ahead" '
+                f'value="{volume.get("read_ahead_kb") or ""}">'
+            )
+            rows.append(
+                row(
+                    volume["dev"],
+                    f"\u2514 volume {volume['name']}",
+                    read_ahead_select(volume.get("read_ahead_kb")),
+                    was,
+                )
+            )
+    if not rows:
+        return ""
+    return (
+        '<details style="margin-top:10px"><summary>Disk I/O settings</summary>'
+        + "".join(rows)
+        + '<div class="note">Defaults by drive type come from fedora-debugg\'s udev rule; '
+        "these override one device and follow it if it moves to another port. Larger "
+        "read-ahead speeds long sequential reads and costs random access (see the tuning "
+        "log).</div></details>"
     )
 
 
