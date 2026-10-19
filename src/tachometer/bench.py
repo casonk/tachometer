@@ -12,8 +12,8 @@ Guardrails, because the machine runs 24/7 and is managed remotely:
   other unit in ``pause_units``) is frozen for the run and thawed after, so a
   render in progress continues instead of starting over;
 - the machine must be idle after that (load per thread, GPU utilisation);
-- every load stage stops as soon as the GPU or CPU passes the same limits the
-  upscaler uses (72 / 78 C, median of recent readings) and the run is marked
+- every load stage stops as soon as the GPU or CPU passes its limit (GPU
+  80 C, CPU 78 C, median of recent readings) and the run is marked
   aborted rather than retried;
 - one run at a time (lock file), lowest CPU and I/O priority, reads only.
 
@@ -55,7 +55,9 @@ LOCK_NAME = "bench.lock"
 INTERVAL_DAYS = {"full": 90, "mid": 30, "short": 7}
 TIER_ORDER = ("full", "mid", "short")
 QUIET_HOURS = (2, 5)
-MAX_GPU_C = float(os.environ.get("TACHOMETER_BENCH_MAX_GPU_C", "72"))
+# GPU limit above the upscaler's sustained 72 C so a soak can reach steady state,
+# still below the RTX 3090's own ~83 C slowdown point.
+MAX_GPU_C = float(os.environ.get("TACHOMETER_BENCH_MAX_GPU_C", "80"))
 MAX_CPU_C = float(os.environ.get("TACHOMETER_BENCH_MAX_CPU_C", "78"))
 IDLE_LOAD_PER_THREAD = 0.3
 IDLE_GPU_UTIL = 15.0

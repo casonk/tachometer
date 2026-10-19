@@ -213,6 +213,88 @@ def _volumes(base: Path) -> list[dict[str, Any]]:
     return volumes
 
 
+# PCI classes worth a link row: display, NVMe, Ethernet.
+_LINK_CLASSES = {"0x0300": "GPU", "0x0302": "GPU", "0x0108": "NVMe", "0x0200": "Network"}
+_PCIE_GEN = {"2.5": 1, "5.0": 2, "8.0": 3, "16.0": 4, "32.0": 5, "64.0": 6}
+
+
+def _gen(speed: str | None) -> int | None:
+    return _PCIE_GEN.get((speed or "").split(" ")[0])
+
+
+def pcie_links(pci_devices: Path) -> list[dict[str, Any]]:
+    """Each GPU, NVMe drive and NIC: the link it has against what it and its slot support.
+
+    The slot's (upstream port's) maximum is a ceiling set by the board; the
+    current speed can also be lower for power saving while idle.
+    """
+    links = []
+    for device in sorted(pci_devices.glob("*")):
+        kind = _LINK_CLASSES.get((_read(device / "class") or "")[:6])
+        width, device_width = _int(device / "current_link_width"), _int(device / "max_link_width")
+        if not kind or not width or not device_width or device_width > 32:
+            continue  # integrated devices report no real link
+        port = device.resolve().parent
+        name = next((p.name for p in device.glob("nvme/nvme*")), None) or next(
+            (p.name for p in device.glob("net/*")), None
+        )
+        model = _read(device / "nvme" / name / "model") if name and kind == "NVMe" else None
+        if not name:
+            name = (
+                Path(os.path.realpath(device / "driver")).name
+                if (device / "driver").exists()
+                else None
+            )
+        links.append(
+            {
+                "address": device.name,
+                "kind": kind,
+                "name": name,
+                "model": " ".join(model.split()) if model else None,
+                "width": width,
+                "device_width": device_width,
+                "slot_width": _int(port / "max_link_width"),
+                "gen": _gen(_read(device / "current_link_speed")),
+                "device_gen": _gen(_read(device / "max_link_speed")),
+                "slot_gen": _gen(_read(port / "max_link_speed")),
+            }
+        )
+    return links
+
+
+def _run_ethtool_rings(iface: str) -> str:
+    try:
+        return subprocess.run(
+            ["ethtool", "-g", iface], capture_output=True, text=True, timeout=5, check=False
+        ).stdout
+    except (OSError, subprocess.SubprocessError):
+        return ""
+
+
+def nic_limits(net: Path, rings=_run_ethtool_rings) -> list[dict[str, Any]]:
+    """Physical network interfaces: speed, queues, ring sizes and hardware drop counters."""
+    nics = []
+    for iface in sorted(net.glob("*")):
+        if not (iface / "device").exists():
+            continue
+        nic: dict[str, Any] = {
+            "name": iface.name,
+            "driver": Path(os.path.realpath(iface / "device" / "driver")).name or None,
+            "speed_mbps": _int(iface / "speed"),
+            "rx_queues": len(list(iface.glob("queues/rx-*"))),
+            "rx_missed": _int(iface / "statistics" / "rx_missed_errors"),
+            "rx_fifo": _int(iface / "statistics" / "rx_fifo_errors"),
+            "carrier_changes": _int(iface / "carrier_changes"),
+        }
+        # "Pre-set maximums" come first in ethtool -g output, then "Current hardware settings".
+        values = re.findall(r"^(RX|TX):\s+(\d+)", rings(iface.name), re.MULTILINE)
+        if len(values) >= 4:
+            nic["ring_max"] = {k: int(v) for k, v in values[:2]}
+            nic["ring"] = {k: int(v) for k, v in values[2:4]}
+        nics.append(nic)
+    return nics
+
+
 def power_profile(etc: Path = Path("/etc"), ppd=_power_profiles_daemon) -> dict[str, str]:
     tuned = _read(etc / "tuned" / "active_profile")
     if tuned:
@@ -229,6 +311,8 @@ def read_limiters(
     etc: Path = Path("/etc"),
     gpu_query=_run_nvidia_smi,
     ppd=_power_profiles_daemon,
+    pci_devices: Path | None = None,
+    rings=_run_ethtool_rings,
 ) -> dict[str, Any]:
     """Every cap readable on this host; sections without a source are omitted."""
     cpu_dir = cpu_dir if cpu_dir is not None else sys_class.parent / "devices" / "system" / "cpu"
@@ -243,6 +327,14 @@ def read_limiters(
     disks = disk_limits(sys_block if sys_block is not None else sys_class.parent / "block")
     if disks:
         limiters["disks"] = disks
+    links = pcie_links(
+        pci_devices if pci_devices is not None else sys_class.parent / "bus" / "pci" / "devices"
+    )
+    if links:
+        limiters["pcie"] = links
+    nics = nic_limits(sys_class / "net", rings)
+    if nics:
+        limiters["network"] = nics
     profile = power_profile(etc, ppd)
     if profile:
         limiters["profile"] = profile
@@ -323,6 +415,59 @@ def describe(limiters: dict[str, Any]) -> list[dict[str, str]]:
                 ),
                 "state": f"tuned for {kind}" if matches else f"{recommended} suits {kind} better",
                 "light": "green" if matches else "yellow",
+            }
+        )
+    for link in limiters.get("pcie") or []:
+        label = " ".join(v for v in (link.get("name"), link.get("model")) if v) or link["address"]
+        notes = []
+        if link["width"] < link["device_width"]:
+            slot = link.get("slot_width")
+            notes.append(
+                f"slot provides x{slot}" if slot and slot < link["device_width"]
+                else "lanes shared or trained down"
+            )  # fmt: skip
+        slot_gen, device_gen = link.get("slot_gen"), link.get("device_gen")
+        if slot_gen and device_gen and slot_gen < device_gen:
+            notes.append(f"PCIe {device_gen}.0 device in a {slot_gen}.0 slot")
+        elif link.get("gen") and device_gen and link["gen"] < device_gen:
+            notes.append("slower while idle (power saving)")
+        held_back = link["width"] < link["device_width"] or bool(
+            slot_gen and device_gen and slot_gen < device_gen
+        )
+        rows.append(
+            {
+                "limiter": f"PCIe link — {link['kind']} {label}",
+                "setting": f"x{link['width']} of x{link['device_width']}"
+                + (f", PCIe {link['gen']}.0" if link.get("gen") else ""),
+                "state": ("held back by its slot: " if held_back else "") + "; ".join(notes)
+                or "full link",
+                "light": "yellow" if held_back else "green",
+            }
+        )
+    for nic in limiters.get("network") or []:
+        bits = [f"{nic['speed_mbps']} Mb/s" if nic.get("speed_mbps") else "link down"]
+        bits.append(f"{nic['rx_queues']} queue{'s' if nic['rx_queues'] != 1 else ''}")
+        if nic.get("ring"):
+            at_max = nic["ring"] == nic.get("ring_max")
+            bits.append(
+                f"ring {nic['ring']['RX']}/{nic['ring']['TX']}"
+                + (" (hardware maximum)" if at_max else f" of {nic['ring_max']['RX']} max")
+            )
+        lost = (nic.get("rx_missed") or 0) + (nic.get("rx_fifo") or 0)
+        rows.append(
+            {
+                "limiter": f"Network — {nic['name']}"
+                + (f" ({nic['driver']})" if nic.get("driver") else ""),
+                "setting": ", ".join(bits),
+                "state": (
+                    f"{lost:,} packets lost by the card" if lost else "no packets lost by the card"
+                )
+                + (
+                    f"; {nic['carrier_changes']} link changes since boot"
+                    if nic.get("carrier_changes") is not None
+                    else ""
+                ),
+                "light": "yellow" if lost else "green",
             }
         )
     profile = limiters.get("profile")

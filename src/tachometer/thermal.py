@@ -972,8 +972,10 @@ def _limiter_card(
     return (
         '<div class="card"><h2>Rev limiters</h2>'
         '<div class="sub" style="margin:0 0 6px">The caps this host runs under, from the latest '
-        "sample. A green dot is a limiter that is set or a disk tuned for its type; amber means "
-        "it is holding the hardware back right now, or a disk's scheduler does not suit it."
+        "sample, including ceilings that cannot be changed in software. A green dot is a "
+        "limiter that is set, a disk tuned for its type or a link running at full width; amber "
+        "means it is holding the hardware back right now: a cap biting, a disk scheduler that "
+        "does not suit it, or a PCIe slot narrower or older than the device in it."
         "</div>"
         '<table class="limits"><thead><tr><th>Limiter</th><th>Setting</th><th>Now</th></tr>'
         f"</thead><tbody>{body}</tbody></table>"
@@ -1025,7 +1027,7 @@ def _bench_card(tachometer_root: Path, limit: int = 12) -> str:
     return (
         '<div class="card"><h2>Benchmarks</h2>'
         '<div class="sub" style="margin:0 0 6px">Nightly runs, newest first: weekly short, '
-        "monthly mid, quarterly full. Load stages stop at 78 °C CPU / 72 °C GPU; skipped "
+        "monthly mid, quarterly full. Load stages stop at 78 °C CPU / 80 °C GPU; skipped "
         "nights say why.</div>"
         '<table class="limits"><thead><tr><th>Started</th><th>Tier</th><th>Result</th>'
         "<th>Cold read</th><th>Memory copy</th><th>CPU (7-Zip)</th><th>GPU FP16</th>"

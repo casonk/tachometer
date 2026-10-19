@@ -455,3 +455,72 @@ def test_disk_rows_include_the_volumes_reads_go_through(tmp_path):
     assert rows["Disk I/O — nvme0n1 WD SN750 (NVMe)"]["setting"] == (
         "none, 128 KiB read-ahead; volume 4tb-m2 512 KiB"
     )
+
+
+def _pci(root: Path, port: str, dev: str, cls: str, link: tuple, port_link: tuple) -> Path:
+    port_dir = root / "devices" / "pci0000:00" / port
+    device = port_dir / dev
+    device.mkdir(parents=True)
+    for name, value in (
+        ("class", cls),
+        ("current_link_width", link[0]),
+        ("max_link_width", link[1]),
+        ("current_link_speed", link[2]),
+        ("max_link_speed", link[3]),
+    ):
+        (device / name).write_text(f"{value}\n")
+    (port_dir / "max_link_width").write_text(f"{port_link[0]}\n")
+    (port_dir / "max_link_speed").write_text(f"{port_link[1]}\n")
+    bus = root / "bus" / "pci" / "devices"
+    bus.mkdir(parents=True, exist_ok=True)
+    (bus / dev).symlink_to(device)
+    return device
+
+
+def test_pcie_links_show_what_the_slot_holds_back(tmp_path):
+    gpu = _pci(tmp_path, "0000:00:1b.4", "0000:03:00.0", "0x030000",
+               (4, 16, "8.0 GT/s PCIe", "16.0 GT/s PCIe"), (4, "8.0 GT/s PCIe"))  # fmt: skip
+    nvme = _pci(tmp_path, "0000:00:1d.0", "0000:06:00.0", "0x010802",
+                (2, 4, "8.0 GT/s PCIe", "8.0 GT/s PCIe"), (4, "8.0 GT/s PCIe"))  # fmt: skip
+    (nvme / "nvme" / "nvme0").mkdir(parents=True)
+    (nvme / "nvme" / "nvme0" / "model").write_text("WD SN750  \n")
+    _pci(tmp_path, "0000:00:1c.0", "0000:05:00.0", "0x020000",
+         (1, 1, "2.5 GT/s PCIe", "2.5 GT/s PCIe"), (1, "2.5 GT/s PCIe"))  # fmt: skip
+    _pci(tmp_path, "0000:00:00.0", "0000:00:02.0", "0x030000",
+         (0, 255, "Unknown", "Unknown"), (0, "Unknown"))  # fmt: skip
+    del gpu
+
+    links = limiters.pcie_links(tmp_path / "bus" / "pci" / "devices")
+    rows = {r["limiter"]: r for r in limiters.describe({"pcie": links})}
+
+    assert len(links) == 3  # the integrated GPU reports no real link
+    gpu_row = next(r for k, r in rows.items() if k.startswith("PCIe link — GPU"))
+    assert gpu_row["setting"] == "x4 of x16, PCIe 3.0"
+    assert gpu_row["state"] == (
+        "held back by its slot: slot provides x4; PCIe 4.0 device in a 3.0 slot"
+    )
+    assert rows["PCIe link — NVMe nvme0 WD SN750"]["state"] == (
+        "held back by its slot: lanes shared or trained down"
+    )
+    assert rows["PCIe link — Network 0000:05:00.0"]["state"] == "full link"
+    assert rows["PCIe link — Network 0000:05:00.0"]["light"] == "green"
+
+
+def test_nic_rows_show_ring_queues_and_card_drops(tmp_path):
+    eth = tmp_path / "net" / "enp5s0"
+    (eth / "statistics").mkdir(parents=True)
+    (eth / "queues" / "rx-0").mkdir(parents=True)
+    (eth / "device").mkdir()
+    (eth / "speed").write_text("1000\n")
+    (eth / "carrier_changes").write_text("2\n")
+    (eth / "statistics" / "rx_missed_errors").write_text("0\n")
+    (eth / "statistics" / "rx_fifo_errors").write_text("0\n")
+    (tmp_path / "net" / "lo").mkdir()
+    rings = "Pre-set maximums:\nRX:\t\t256\nTX:\t\t256\nCurrent hardware settings:\nRX:\t\t256\nTX:\t\t256\n"
+
+    nics = limiters.nic_limits(tmp_path / "net", rings=lambda iface: rings)
+    (row,) = limiters.describe({"network": nics})
+
+    assert row["setting"] == "1000 Mb/s, 1 queue, ring 256/256 (hardware maximum)"
+    assert row["state"] == "no packets lost by the card; 2 link changes since boot"
+    assert row["light"] == "green"
