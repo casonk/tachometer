@@ -1,12 +1,7 @@
 # Nightly benchmark settings (tachometer bench). Copy to
 # config/tachometer/bench.local.toml (gitignored) and fill in this machine's
-# paths.
-
-# One large existing file per volume to read cold (read only; 2 GiB or more
-# for the mid and full tiers). The label is what the history and /thermal show.
-[volumes]
-# home = "/home/USER/.ollama/models/blobs/sha256-..."
-# data = "/mnt/DATA/some/large/file.mkv"
+# paths. Plain settings come first: keys after a [table] header belong to
+# that table.
 
 # Units stopped for the run and started again afterwards.
 pause_units = ["clockwork-upscale.service"]
@@ -19,3 +14,20 @@ torch_python = ""
 
 # Seconds to let the machine cool and settle after pausing units.
 settle_seconds = 120
+
+# Minutes to wait for a stop_at_boundary unit to finish its current job
+# before falling back to freezing it.
+boundary_wait_minutes = 60
+
+# One large existing file per volume to read cold (read only; 2 GiB or more
+# for the mid and full tiers). The label is what the history and /thermal show.
+[volumes]
+# home = "/home/USER/.ollama/models/blobs/sha256-..."
+# data = "/mnt/DATA/some/large/file.mkv"
+
+# Units to stop between two jobs instead of freezing, with the status file
+# that shows the current job. A frozen GPU worker keeps the card in its
+# high-power state (~120-140 W at 0 % load); stopping it right after a job
+# finishes loses seconds of work and lets the GPU idle and cool first.
+# [stop_at_boundary]
+# "clockwork-upscale.service" = "~/.cache/clockwork/upscale-status.json"

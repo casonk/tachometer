@@ -1090,9 +1090,20 @@ def _bench_card(tachometer_root: Path, limit: int = 12) -> str:
     for record in reversed(records[-limit:]):
         top = bench.headline(record)
         status = record.get("status", "?")
-        why = record.get("reason") or (
-            f"stopped at {record['stopped_by']}" if record.get("stopped_by") else ""
-        )
+        why = record.get("reason") or ""
+        if not why and record.get("stopped_by"):
+            # Time to the limit is the cooling measurement: it should grow after a fix.
+            stage = next(
+                (
+                    (name, data)
+                    for name, data in (record.get("results") or {}).items()
+                    if isinstance(data, dict) and data.get("stopped_by")
+                ),
+                None,
+            )
+            why = f"stopped at {record['stopped_by']}"
+            if stage and stage[1].get("seconds") is not None:
+                why += f" after {round(stage[1]['seconds'] / 60)} min ({stage[0]} stage)"
         light = {"completed": "green", "aborted": "yellow", "skipped": "unknown"}.get(
             status, "unknown"
         )

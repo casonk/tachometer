@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import datetime as dt
+import json
 import sys
 from pathlib import Path
 
@@ -214,3 +215,78 @@ def test_pause_falls_back_to_stop_when_freezing_fails(monkeypatch):
     assert actions == [("freeze", "x.service"), ("stop", "x.service"), ("start", "x.service")]
     monkeypatch.setattr(bench, "unit_is_active", lambda unit: False)
     assert bench.pause_unit("x.service") is None
+
+
+def test_example_config_keeps_plain_settings_out_of_its_tables():
+    example = (
+        Path(__file__).resolve().parent.parent / "config" / "tachometer" / "bench.toml.example"
+    )
+    config = bench.load_config(example)
+    assert config.volumes == {}
+    assert config.pause_units == ["clockwork-upscale.service"]
+    assert config.settle_seconds == 120 and config.boundary_wait_minutes == 60
+
+
+def test_wait_for_boundary_sees_the_next_job_or_idle(tmp_path):
+    status = tmp_path / "status.json"
+    states = iter(
+        [
+            {"state": "rendering", "source": "/a.mkv"},
+            {"state": "rendering", "source": "/a.mkv"},
+            {"state": "rendering", "source": "/b.mkv"},
+        ]
+    )
+
+    def advance(_seconds):
+        status.write_text(json.dumps(next(states)))
+
+    advance(0)
+    assert bench.wait_for_boundary(status, 3600, sleep=advance, clock=lambda: 0.0) is True
+
+    status.write_text(json.dumps({"state": "done"}))
+    assert bench.wait_for_boundary(status, 0, sleep=lambda s: None) is True
+
+    status.write_text(json.dumps({"state": "rendering", "source": "/a.mkv"}))
+    clock = iter([0.0, 0.0, 100.0])
+    assert (
+        bench.wait_for_boundary(status, 50, sleep=lambda s: None, clock=lambda: next(clock))
+        is False
+    )
+
+
+def test_pause_for_bench_stops_at_a_boundary_else_freezes(monkeypatch, tmp_path):
+    actions = []
+    monkeypatch.setattr(bench, "unit_is_active", lambda unit: True)
+    monkeypatch.setattr(
+        bench,
+        "_systemctl",
+        lambda *args: actions.append(args) or bench.subprocess.CompletedProcess(args, 0),
+    )
+    config = bench.BenchConfig(stop_at_boundary={"up.service": str(tmp_path / "s.json")})
+
+    monkeypatch.setattr(bench, "wait_for_boundary", lambda path, timeout: True)
+    assert bench.pause_for_bench("up.service", config) == "stopped"
+    assert actions[-1] == ("stop", "up.service")
+
+    monkeypatch.setattr(bench, "wait_for_boundary", lambda path, timeout: False)
+    assert bench.pause_for_bench("up.service", config) == "frozen"
+    assert bench.pause_for_bench("other.service", config) == "frozen"  # no status file
+
+
+def test_thermal_card_shows_time_to_the_limit(tmp_path):
+    bench.append_history(
+        bench.history_path(tmp_path),
+        {
+            "started_at": _night(),
+            "tier": "full",
+            "status": "aborted",
+            "stopped_by": "GPU 80 °C",
+            "results": {
+                "cpu": {"seconds": 1802},
+                "gpu": {"seconds": 432, "stopped_by": "GPU 80 °C"},
+            },
+        },
+    )
+    assert "stopped at GPU 80 °C after 7 min (gpu stage)" in thermal.render_page(
+        tmp_path, controls={}
+    )
