@@ -1,0 +1,21 @@
+# Nightly benchmark settings (tachometer bench). Copy to
+# config/tachometer/bench.local.toml (gitignored) and fill in this machine's
+# paths.
+
+# One large existing file per volume to read cold (read only; 2 GiB or more
+# for the mid and full tiers). The label is what the history and /thermal show.
+[volumes]
+# home = "/home/USER/.ollama/models/blobs/sha256-..."
+# data = "/mnt/DATA/some/large/file.mkv"
+
+# Units stopped for the run and started again afterwards.
+pause_units = ["clockwork-upscale.service"]
+# Units whose running ffmpeg means someone is streaming: skip the night.
+busy_units = ["clockwork-web.service"]
+
+# A Python with PyTorch and CUDA for the GPU compute test (FP16 matmul).
+# Empty skips the GPU load stages.
+torch_python = ""
+
+# Seconds to let the machine cool and settle after pausing units.
+settle_seconds = 120

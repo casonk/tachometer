@@ -1,0 +1,33 @@
+# Nightly benchmark: weekly short, monthly mid, quarterly full, whichever is
+# most overdue, inside 02:00-05:00 and only when the machine is idle. Results
+# go to .tachometer/bench-history.jsonl and the /thermal page.
+#
+# Render to config/clockwork/bench.toml (gitignored): replace __REPO_ROOT__
+# with this machine's tachometer checkout path. Fill in
+# config/tachometer/bench.local.toml (see bench.toml.example), then:
+#   clockwork install --manifest config/clockwork/bench.toml --target systemd-user
+#
+# Needs no privileges. The job lowers its own CPU and I/O priority.
+
+[[jobs]]
+name = "tachometer-bench"
+description = "Nightly benchmark tier (short/mid/full) for the tuning history"
+scope = "user"
+service_type = "oneshot"
+working_directory = "__REPO_ROOT__"
+exec_start = "/usr/bin/env bash __REPO_ROOT__/scripts/run_bench.sh"
+standard_output = "journal"
+standard_error = "journal"
+timer_description = "Run the overdue benchmark tier at night"
+
+[jobs.timer]
+kind = "calendar"
+on_calendar = "*-*-* 02:30:00"
+persistent = false
+accuracy_sec = "60"
+randomized_delay_sec = "10min"
+
+[jobs.cron]
+expression = "30 2 * * *"
+command = "/usr/bin/env bash __REPO_ROOT__/scripts/run_bench.sh >/dev/null 2>&1"
+comments = ["Runs the overdue benchmark tier at night."]

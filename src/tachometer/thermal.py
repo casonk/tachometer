@@ -808,6 +808,7 @@ __MESSAGE__<div class="chips">__CHIPS__</div>
  <div class="sub" style="margin:0">Degrees Celsius, __TEMP_NOTE__</div>
  <div class="legend" id="legend"></div><div id="temp"></div><div class="tip" id="tip-temp"></div></div>
 __LIMITERS__
+__BENCH__
 <div class="card" id="power-card"><h2>GPU power</h2>
  <div class="sub" style="margin:0">Watts drawn against the power cap (the rev limiter)__POWER_NOTE__</div>
  <div id="power"></div><div class="tip" id="tip-power"></div></div>
@@ -981,6 +982,57 @@ def _limiter_card(
     )
 
 
+def _bench_card(tachometer_root: Path, limit: int = 12) -> str:
+    """Recent nightly benchmark runs, newest first, with the headline numbers."""
+    from . import bench
+
+    records = bench.load_history(bench.history_path(tachometer_root))
+    if not records:
+        return (
+            '<div class="card"><h2>Benchmarks</h2><div class="sub" style="margin:0">'
+            "No runs yet. Weekly short, monthly mid and quarterly full tiers run at night "
+            "once the tachometer-bench timer is installed.</div></div>"
+        )
+
+    def num(value: Any, unit: str, digits: int = 0) -> str:
+        return "–" if value is None else f"{value:,.{digits}f} {unit}"
+
+    rows = []
+    for record in reversed(records[-limit:]):
+        top = bench.headline(record)
+        status = record.get("status", "?")
+        why = record.get("reason") or (
+            f"stopped at {record['stopped_by']}" if record.get("stopped_by") else ""
+        )
+        light = {"completed": "green", "aborted": "yellow", "skipped": "unknown"}.get(
+            status, "unknown"
+        )
+        disks = (
+            ", ".join(f"{html.escape(k)} {num(v, 'MB/s')}" for k, v in top["disks"].items()) or "–"
+        )
+        peaks = " / ".join(
+            num(top[k], "°C") for k in ("peak_cpu_c", "peak_gpu_c") if top[k] is not None
+        )
+        started = time.strftime("%Y-%m-%d %H:%M", time.localtime(record.get("started_at", 0)))
+        rows.append(
+            f"<tr><td>{started}</td><td>{html.escape(str(record.get('tier')))}</td>"
+            f'<td><span class="dot {light}"></span> {html.escape(status)}'
+            f"{'<br><small>' + html.escape(why) + '</small>' if why else ''}</td>"
+            f"<td>{disks}</td><td>{num(top['memory_copy_GBps'], 'GB/s', 1)}</td>"
+            f"<td>{num(top['cpu_rating_mips'], 'MIPS')}</td>"
+            f"<td>{num(top['gpu_tflops'], 'TFLOPS', 1)}</td><td>{peaks or '–'}</td></tr>"
+        )
+    return (
+        '<div class="card"><h2>Benchmarks</h2>'
+        '<div class="sub" style="margin:0 0 6px">Nightly runs, newest first: weekly short, '
+        "monthly mid, quarterly full. Load stages stop at 78 °C CPU / 72 °C GPU; skipped "
+        "nights say why.</div>"
+        '<table class="limits"><thead><tr><th>Started</th><th>Tier</th><th>Result</th>'
+        "<th>Cold read</th><th>Memory copy</th><th>CPU (7-Zip)</th><th>GPU FP16</th>"
+        f"<th>Peak CPU / GPU</th></tr></thead><tbody>{''.join(rows)}</tbody></table></div>"
+    )
+
+
 def _fmt_age(seconds: int | None) -> str:
     if seconds is None:
         return "no samples yet"
@@ -1053,6 +1105,7 @@ def render_page(
                 payload["range"],
             ),
         )
+        .replace("__BENCH__", _bench_card(tachometer_root))
         .replace("__MESSAGE__", _message(message, message_ok))
         .replace("__DATA__", data)
     )

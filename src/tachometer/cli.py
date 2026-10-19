@@ -85,6 +85,15 @@ def _sample_host(args: argparse.Namespace) -> int:
     return 0
 
 
+def _bench(args: argparse.Namespace) -> int:
+    from . import bench
+
+    manifest = load_manifest(args.manifest)
+    if not args.auto and not args.tier:
+        raise SystemExit("bench: give --tier short|mid|full, or --auto for the nightly timer")
+    return bench.main(manifest.repo_root, args.tier, auto=args.auto)
+
+
 def _host_snapshot(args: argparse.Namespace) -> int:
     manifest = load_manifest(args.manifest)
     s = settings_path(args.manifest)
@@ -225,6 +234,19 @@ def build_parser() -> argparse.ArgumentParser:
         help="Days of hourly min/mean/max records to keep (default: 90).",
     )
     sample_host_parser.set_defaults(func=_sample_host)
+
+    bench_parser = subparsers.add_parser(
+        "bench",
+        help="Run a benchmark tier (short/mid/full), or the overdue one with --auto",
+    )
+    bench_parser.add_argument("--manifest", required=True)
+    bench_parser.add_argument("--tier", choices=["short", "mid", "full"], default=None)
+    bench_parser.add_argument(
+        "--auto",
+        action="store_true",
+        help="Nightly mode: run the most overdue tier, only inside 02:00-05:00",
+    )
+    bench_parser.set_defaults(func=_bench)
 
     agent_utilization_parser = subparsers.add_parser(
         "agent-utilization",
