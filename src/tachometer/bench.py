@@ -94,6 +94,11 @@ class BenchConfig:
     busy_units: list[str] = field(default_factory=lambda: ["clockwork-web.service"])
     torch_python: str = ""
     settle_seconds: int = 120
+    # unit -> status file. Such a unit is stopped (not frozen) between two jobs:
+    # a frozen GPU worker keeps its CUDA/NVENC session open and the card in P2,
+    # drawing ~120-140 W at 0 % load, so GPU stages would start warm.
+    stop_at_boundary: dict[str, str] = field(default_factory=dict)
+    boundary_wait_minutes: int = 60
 
 
 def load_config(path: Path) -> BenchConfig:
@@ -107,6 +112,13 @@ def load_config(path: Path) -> BenchConfig:
             setattr(config, key, [str(u) for u in data[key]])
     config.torch_python = str(data.get("torch_python", ""))
     config.settle_seconds = int(data.get("settle_seconds", config.settle_seconds))
+    config.stop_at_boundary = {
+        str(unit): os.path.expanduser(str(path))
+        for unit, path in (data.get("stop_at_boundary") or {}).items()
+    }
+    config.boundary_wait_minutes = int(
+        data.get("boundary_wait_minutes", config.boundary_wait_minutes)
+    )
     return config
 
 
@@ -443,6 +455,45 @@ def pause_unit(unit: str) -> str | None:
     return "stopped"
 
 
+def _job_marker(status_file: Path) -> tuple[Any, Any] | None:
+    """(state, current job) from a worker's JSON status file, or None if unreadable."""
+    try:
+        status = json.loads(status_file.read_text())
+    except (OSError, ValueError):
+        return None
+    return status.get("state"), status.get("source") or status.get("file")
+
+
+def wait_for_boundary(
+    status_file: Path, timeout: float, poll: float = 30.0, sleep=time.sleep, clock=time.time
+) -> bool:
+    """Wait until the worker is between jobs: idle, or moved on to its next job.
+
+    Returns False if that did not happen within ``timeout`` seconds.
+    """
+    first = _job_marker(status_file)
+    deadline = clock() + timeout
+    while True:
+        marker = _job_marker(status_file)
+        if marker is not None and (
+            marker[0] not in ("rendering", "cooling") or (first and marker[1] != first[1])
+        ):
+            return True
+        if clock() >= deadline:
+            return False
+        sleep(poll)
+
+
+def pause_for_bench(unit: str, config: BenchConfig) -> str | None:
+    """Stop a unit at a job boundary when it has a status file, otherwise freeze it."""
+    status_file = config.stop_at_boundary.get(unit)
+    if status_file and unit_is_active(unit):
+        if wait_for_boundary(Path(status_file), config.boundary_wait_minutes * 60):
+            _systemctl("stop", unit)
+            return "stopped"
+    return pause_unit(unit)
+
+
 def resume_unit(unit: str, how: str) -> None:
     _systemctl("thaw" if how == "frozen" else "start", unit)
 
@@ -591,7 +642,7 @@ def run(
         _lower_priority()
         paused = {}
         for unit in config.pause_units:
-            how = pause_unit(unit)
+            how = pause_for_bench(unit, config)
             if how:
                 paused[unit] = how
         try:
