@@ -487,10 +487,13 @@ def wait_for_boundary(
 def pause_for_bench(unit: str, config: BenchConfig) -> str | None:
     """Stop a unit at a job boundary when it has a status file, otherwise freeze it."""
     status_file = config.stop_at_boundary.get(unit)
-    if status_file and unit_is_active(unit):
-        if wait_for_boundary(Path(status_file), config.boundary_wait_minutes * 60):
-            _systemctl("stop", unit)
-            return "stopped"
+    if (
+        status_file
+        and unit_is_active(unit)
+        and wait_for_boundary(Path(status_file), config.boundary_wait_minutes * 60)
+    ):
+        _systemctl("stop", unit)
+        return "stopped"
     return pause_unit(unit)
 
 
