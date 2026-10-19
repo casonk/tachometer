@@ -48,7 +48,11 @@ def test_run_pauses_units_skips_when_busy_and_always_resumes(tmp_path, monkeypat
     actions = []
     monkeypatch.setattr(bench, "_lower_priority", lambda: None)
     monkeypatch.setattr(bench, "unit_is_active", lambda unit: True)
-    monkeypatch.setattr(bench, "_systemctl", lambda *args: actions.append(args))
+    monkeypatch.setattr(
+        bench,
+        "_systemctl",
+        lambda *args: actions.append(args) or bench.subprocess.CompletedProcess(args, 0),
+    )
     monkeypatch.setattr(bench, "gpu_reading", lambda: {"util": 3.0})
     monkeypatch.setattr(bench, "idle_problem", lambda gpu: None)
     monkeypatch.setattr(bench.time, "sleep", lambda s: None)
@@ -62,9 +66,10 @@ def test_run_pauses_units_skips_when_busy_and_always_resumes(tmp_path, monkeypat
 
     assert record["status"] == "aborted" and record["stopped_by"] == "GPU 73 °C"
     assert actions == [
-        ("stop", "clockwork-upscale.service"),
-        ("start", "clockwork-upscale.service"),
+        ("freeze", "clockwork-upscale.service"),
+        ("thaw", "clockwork-upscale.service"),
     ]
+    assert record["paused"] == {"clockwork-upscale.service": "frozen"}
 
     monkeypatch.setattr(bench, "ffmpeg_in_units", lambda units: ["clockwork-web.service"])
     busy = bench.run(tmp_path, "short", now=_night(), config=config)
@@ -192,3 +197,20 @@ def test_cool_down_waits_until_below_the_margin(monkeypatch):
     monkeypatch.setattr(bench.time, "sleep", lambda s: None)
     guard = bench.Guard(cpu_reader=lambda: next(temps), gpu_reader=lambda: None)
     assert bench.cool_down(guard) is True
+
+
+def test_pause_falls_back_to_stop_when_freezing_fails(monkeypatch):
+    actions = []
+
+    def fake(*args):
+        actions.append(args)
+        return bench.subprocess.CompletedProcess(args, 1 if args[0] == "freeze" else 0)
+
+    monkeypatch.setattr(bench, "_systemctl", fake)
+    monkeypatch.setattr(bench, "unit_is_active", lambda unit: True)
+    how = bench.pause_unit("x.service")
+    bench.resume_unit("x.service", how)
+    assert how == "stopped"
+    assert actions == [("freeze", "x.service"), ("stop", "x.service"), ("start", "x.service")]
+    monkeypatch.setattr(bench, "unit_is_active", lambda unit: False)
+    assert bench.pause_unit("x.service") is None

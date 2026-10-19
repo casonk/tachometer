@@ -261,8 +261,9 @@ scripts/run_bench.sh                  # nightly mode: the overdue tier, 02:00-05
 The nightly timer comes from `config/clockwork/bench.toml.template` (render,
 then `clockwork install --manifest config/clockwork/bench.toml --target
 systemd-user`). Guardrails: one run per night at most; skipped while the
-library is streaming; units in `pause_units` (the AI upscaler) are stopped and
-restarted; the machine must be idle after a settle period; each load stage
+library is streaming; units in `pause_units` (the AI upscaler) are frozen in
+place and thawed afterwards, so a render resumes rather than restarts; the
+machine must be idle after a settle period; each load stage
 stops when the CPU reaches 78 °C or the GPU 72 °C (median of recent readings;
 override with `TACHOMETER_BENCH_MAX_CPU_C` / `_GPU_C`) and the next stage waits
 until both are 10 °C cooler; lowest CPU and I/O priority; reads only. Every run

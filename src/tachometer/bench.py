@@ -9,7 +9,8 @@ Guardrails, because the machine runs 24/7 and is managed remotely:
 - ``auto`` runs only inside the quiet window (02:00-05:00 local) and only the
   most overdue tier, so at most one run a night;
 - nothing runs while the library is being streamed; the AI upscaler (and any
-  other unit in ``pause_units``) is stopped for the run and started again;
+  other unit in ``pause_units``) is frozen for the run and thawed after, so a
+  render in progress continues instead of starting over;
 - the machine must be idle after that (load per thread, GPU utilisation);
 - every load stage stops as soon as the GPU or CPU passes the same limits the
   upscaler uses (72 / 78 C, median of recent readings) and the run is marked
@@ -427,6 +428,23 @@ def unit_is_active(unit: str) -> bool:
     return _systemctl("is-active", unit).stdout.strip() == "active"
 
 
+def pause_unit(unit: str) -> str | None:
+    """Freeze a running unit in place (its work resumes after); stop it if freezing fails.
+
+    Returns how it was paused ("frozen" or "stopped"), or None when it was not running.
+    """
+    if not unit_is_active(unit):
+        return None
+    if _systemctl("freeze", unit).returncode == 0:
+        return "frozen"
+    _systemctl("stop", unit)
+    return "stopped"
+
+
+def resume_unit(unit: str, how: str) -> None:
+    _systemctl("thaw" if how == "frozen" else "start", unit)
+
+
 def ffmpeg_in_units(units: list[str], proc: Path = Path("/proc")) -> list[str]:
     """Units among ``units`` with an ffmpeg running in them (e.g. a library stream)."""
     busy = set()
@@ -569,9 +587,11 @@ def run(
         if streaming:
             return finish("skipped", reason=f"in use: {', '.join(streaming)}")
         _lower_priority()
-        paused = [unit for unit in config.pause_units if unit_is_active(unit)]
-        for unit in paused:
-            _systemctl("stop", unit)
+        paused = {}
+        for unit in config.pause_units:
+            how = pause_unit(unit)
+            if how:
+                paused[unit] = how
         try:
             if paused:
                 time.sleep(config.settle_seconds)
@@ -583,8 +603,8 @@ def run(
             status = "aborted" if measured["stopped_by"] else "completed"
             return finish(status, paused=paused, **measured)
         finally:
-            for unit in paused:
-                _systemctl("start", unit)
+            for unit, how in paused.items():
+                resume_unit(unit, how)
 
 
 def headline(record: dict[str, Any]) -> dict[str, Any]:
