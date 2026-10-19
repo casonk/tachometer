@@ -264,7 +264,7 @@ systemd-user`). Guardrails: one run per night at most; skipped while the
 library is streaming; units in `pause_units` (the AI upscaler) are frozen in
 place and thawed afterwards, so a render resumes rather than restarts; the
 machine must be idle after a settle period; each load stage
-stops when the CPU reaches 78 °C or the GPU 72 °C (median of recent readings;
+stops when the CPU reaches 78 °C or the GPU 80 °C (median of recent readings;
 override with `TACHOMETER_BENCH_MAX_CPU_C` / `_GPU_C`) and the next stage waits
 until both are 10 °C cooler; lowest CPU and I/O priority; reads only. Every run
 is recorded in `.tachometer/bench-history.jsonl`, including skipped and
