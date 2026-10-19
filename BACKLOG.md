@@ -46,49 +46,6 @@ All originally-planned items are now implemented.
   readable without root) on `/thermal` or the host banner, so an outdated BIOS
   (currently 3006 from 2021-10-12) stays visible.
 
-- [ ] [manual:2026-10-18] **Benchmark suite (longer, repeatable).** The read-ahead
-  tuning on the workstation showed both how much a measurement can reveal (LUKS on
-  NVMe went 485 -> 1404 MB/s) and how noisy short runs are (the same 2 MiB setting
-  measured 1404 and 1278 MB/s in two sessions). Add a `tachometer bench` that runs
-  longer, repeated tests and keeps the results as history: cold sequential and
-  random reads per volume (fio, or the posix_fadvise-based script used for the
-  read-ahead sweep), including read amplification from `/proc/diskstats`; memory
-  bandwidth; CPU and GPU sustained load with temperature, power and clock traces
-  (a soak test that also shows when a rev limiter engages); medians with spread,
-  not single numbers. Run it on demand before and after any hardware, BIOS or
-  tuning change, and on a slow schedule when the machine is idle, and chart the
-  history next to `/thermal`. Results also go into fedora-debugg's
-  `docs/tuning-log.md` / `docs/benchmarks/` when they back a decision (its
-  `scripts/bench_cold_read.py` is the disk part to reuse).
-
-  Three tiers, all at night (2026-10-18), plus on demand before/after a change:
-  - **weekly — short** (~5–10 min): one cold-read pass per volume, a few
-    seconds of memory bandwidth, temperatures and clocks at idle. Catches
-    regressions (a drive dropping to a narrower link, a setting reset by a BIOS
-    update) without stressing anything.
-  - **monthly — mid** (~30–60 min): the disk suite with repeats and random
-    reads, memory bandwidth, and a short (~10 min) CPU and GPU load at the
-    configured caps.
-  - **quarterly — full** (a few hours): longer soak tests that reach thermal
-    steady state, the full repeat count for tight medians, and every
-    read-ahead/scheduler variant worth rechecking. Skipped and rescheduled if
-    the night is warm or the machine is busy, never run back to back.
-
-  Scheduling has to be careful so a benchmark never overloads the PC:
-  - run only in a quiet window (e.g. 02:00–05:00), only when load per thread,
-    GPU utilisation and disk busy have been low for ~15 min, and never while
-    someone is streaming from the library or the AI upscaler is rendering
-    (pause `clockwork-upscale` for the run, resume after);
-  - one benchmark at a time (lock file), each with a hard time limit;
-  - honour the rev limiters: stop a test as soon as GPU or CPU temperature
-    crosses the same limits the upscaler uses (72 / 78 °C) or a fan passes a
-    set RPM, and record that it was cut short rather than retrying;
-  - lowest CPU and I/O priority, a bounded working set (no more than a few GiB
-    of reads, nothing written to the data disks except results), and no write
-    benchmarks on drives that hold data unless explicitly requested;
-  - every run logs what it skipped or aborted, so gaps in the history explain
-    themselves.
-
 ### CPU temperature on Apple Silicon
 
 The root-run powermetrics collector gives Intel Macs CPU and GPU die
@@ -137,3 +94,7 @@ providers or kernel drivers, and the payoff does not justify that surface.
 - **Dependency vulnerability scan** — run `pip-audit` or `safety` in the background and surface CVE counts
 - **Test coverage trend** — parse `.coverage` or `coverage.xml` and track line/branch coverage over time
 - **Cold-start time** — measure time-to-first-output for CLI tools (import overhead)
+
+## Done
+
+- [x] [manual:2026-10-18] **Benchmark suite (longer, repeatable)** — `tachometer bench` with weekly short / monthly mid / quarterly full tiers, nightly timer template, guardrails (quiet window, streaming check, upscaler paused, idle check, 78/72 °C stage stops with cool-down, lock, low priority, read-only), history in `.tachometer/bench-history.jsonl` and a Benchmarks card on `/thermal`. Follow-ups: charts of the history over time; fio-based random I/O if fio is installed.

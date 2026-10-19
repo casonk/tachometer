@@ -240,6 +240,35 @@ AI Utilization strip sourced from local CLI state:
 Copilot usage only appears after at least one session has started, and the
 current session totals land when that session shuts down.
 
+## Nightly Benchmarks
+
+`tachometer bench` keeps a benchmark history next to the thermal history, so a
+setting can be explained later and regressions show up (a drive on a narrower
+link, a BIOS setting lost after an update). Three tiers, run at night:
+
+| Tier | Due every | Takes | Measures |
+|---|---|---|---|
+| short | 7 days | ~5 min | cold read per volume (512 MiB), memory copy, NIC error/drop counters, idle temperatures |
+| mid | 30 days | ~30 min | cold reads ×3 with random-access cost, memory, 10 min CPU (7-Zip) and 10 min GPU (FP16 matmul) at the configured caps |
+| full | 90 days | ~2 h | cold reads ×5, 30 min CPU, 30 min GPU and 30 min combined soaks |
+
+```bash
+cp config/tachometer/bench.toml.example config/tachometer/bench.local.toml  # then edit
+scripts/run_bench.sh --tier short     # run one now
+scripts/run_bench.sh                  # nightly mode: the overdue tier, 02:00-05:00 only
+```
+
+The nightly timer comes from `config/clockwork/bench.toml.template` (render,
+then `clockwork install --manifest config/clockwork/bench.toml --target
+systemd-user`). Guardrails: one run per night at most; skipped while the
+library is streaming; units in `pause_units` (the AI upscaler) are stopped and
+restarted; the machine must be idle after a settle period; each load stage
+stops when the CPU reaches 78 °C or the GPU 72 °C (median of recent readings;
+override with `TACHOMETER_BENCH_MAX_CPU_C` / `_GPU_C`) and the next stage waits
+until both are 10 °C cooler; lowest CPU and I/O priority; reads only. Every run
+is recorded in `.tachometer/bench-history.jsonl`, including skipped and
+heat-stopped ones, and listed on `/thermal`.
+
 ## Disk Pressure Response
 
 When disk utilization crosses the red threshold, `tachometer` writes an open

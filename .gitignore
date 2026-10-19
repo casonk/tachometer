@@ -27,6 +27,8 @@ CLAUDE.md
 config/clockwork/portfolio-server.toml
 config/clockwork/portfolio-snapshot.toml
 config/clockwork/host-sampler.toml
+config/clockwork/bench.toml
+config/tachometer/bench.local.toml
 
 # Local-only downstream inventory: may name private repositories, which the
 # tracked downstream-repos.toml must not. Ship only the .example template.
