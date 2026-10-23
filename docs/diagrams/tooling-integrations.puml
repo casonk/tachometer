@@ -1,5 +1,5 @@
 @startuml
-title tachometer Tooling Integrations
+title checkout Tooling Integrations
 left to right direction
 skinparam shadowing false
 skinparam defaultFontName Monospace
@@ -11,7 +11,8 @@ rectangle ".github/workflows/secret-scan.yml\n1 detected tool" as source_github_
 rectangle "scripts/macos/install_powermetrics_collector.sh\n11 detected tools" as source_scripts_macos_install_powermetrics_collector_sh #E0F2FE
 rectangle "scripts/refresh_tachometer_summaries.sh\n3 detected tools" as source_scripts_refresh_tachometer_summaries_sh #E0F2FE
 rectangle "scripts/run_all_tachometer_snapshots.sh\n2 detected tools" as source_scripts_run_all_tachometer_snapshots_sh #E0F2FE
-rectangle "scripts/run_tachometer_profile.sh\n3 detected tools" as source_scripts_run_tachometer_profile_sh #E0F2FE
+rectangle "scripts/run_bench.sh\n0 detected tools" as source_scripts_run_bench_sh #E0F2FE
+rectangle "scripts/run_tachometer_profile.sh\n1 detected tool" as source_scripts_run_tachometer_profile_sh #E0F2FE
 rectangle "scripts/sample_host.sh\n0 detected tools" as source_scripts_sample_host_sh #E0F2FE
 rectangle "scripts/serve_tachometer.sh\n1 detected tool" as source_scripts_serve_tachometer_sh #E0F2FE
 cloud "actions/download-artifact" as tool_actions_download_artifact #FEF3C7
@@ -32,9 +33,7 @@ cloud "pypa/gh-action-pypi-publish" as tool_pypa_gh_action_pypi_publish #FEF3C7
 cloud "python3" as tool_python3 #FEF3C7
 cloud "rm" as tool_rm #FEF3C7
 cloud "rmdir" as tool_rmdir #FEF3C7
-cloud "run" as tool_run #FEF3C7
 cloud "sleep" as tool_sleep #FEF3C7
-cloud "summarize" as tool_summarize #FEF3C7
 cloud "tachometer" as tool_tachometer #FEF3C7
 cloud "tail" as tool_tail #FEF3C7
 source_github_workflows_ci_yml --> tool_casonk_github_github_workflows_install_check_yml
@@ -59,12 +58,10 @@ source_scripts_refresh_tachometer_summaries_sh --> tool_python3
 source_scripts_refresh_tachometer_summaries_sh --> tool_tachometer
 source_scripts_run_all_tachometer_snapshots_sh --> tool_bash
 source_scripts_run_all_tachometer_snapshots_sh --> tool_python3
-source_scripts_run_tachometer_profile_sh --> tool_run
-source_scripts_run_tachometer_profile_sh --> tool_summarize
 source_scripts_run_tachometer_profile_sh --> tool_tachometer
 source_scripts_serve_tachometer_sh --> tool_tachometer
 note as toolingGraphSummary
-Scanned 9 tooling entrypoints.
-Detected 23 third-party tools.
+Scanned 10 tooling entrypoints.
+Detected 21 third-party tools.
 end note
 @enduml
