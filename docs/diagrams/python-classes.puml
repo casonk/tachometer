@@ -1,5 +1,25 @@
 @startuml classes_tachometer
 set namespaceSeparator none
+class "BenchConfig" as tachometer.bench.BenchConfig {
+  boundary_wait_minutes : int
+  busy_units : list[str]
+  pause_units : list[str]
+  settle_seconds : int
+  stop_at_boundary : dict[str, str]
+  stop_units : list[str]
+  torch_python : str
+  volumes : dict[str, str]
+}
+class "Guard" as tachometer.bench.Guard {
+  cpu_reader
+  gpu_reader
+  max_cpu : float
+  max_gpu : float
+  trace : list[dict[str, float | None]]
+  tripped : str | None
+  sample(started: float) -> None
+  summary() -> dict[str, Any]
+}
 class "RepoManifest" as tachometer.model.RepoManifest {
   category : str
   default_label : str
@@ -63,6 +83,15 @@ class "ResourceSnapshot" as tachometer.model.ResourceSnapshot {
   swap_used_bytes : int | None
   timestamp : float
   uptime_seconds : float | None
+}
+class "TierPlan" as tachometer.bench.TierPlan {
+  combined_seconds : int
+  cpu_seconds : int
+  gpu_seconds : int
+  memory_reps : int
+  random_pages : int
+  read_mb : int
+  read_runs : int
 }
 class "_Handler" as tachometer.server._Handler {
   host_summary_path : Path

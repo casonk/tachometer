@@ -8,7 +8,8 @@ skinparam linetype ortho
 rectangle "scripts/macos/install_powermetrics_collector.sh\n0 local shell edges\n11 external tools" as shell_scripts_macos_install_powermetrics_collector_sh #DBEAFE
 rectangle "scripts/refresh_tachometer_summaries.sh\n0 local shell edges\n3 external tools" as shell_scripts_refresh_tachometer_summaries_sh #DBEAFE
 rectangle "scripts/run_all_tachometer_snapshots.sh\n0 local shell edges\n1 external tool" as shell_scripts_run_all_tachometer_snapshots_sh #DBEAFE
-rectangle "scripts/run_tachometer_profile.sh\n0 local shell edges\n3 external tools" as shell_scripts_run_tachometer_profile_sh #DBEAFE
+rectangle "scripts/run_bench.sh\n0 local shell edges\n0 external tools" as shell_scripts_run_bench_sh #DBEAFE
+rectangle "scripts/run_tachometer_profile.sh\n0 local shell edges\n1 external tool" as shell_scripts_run_tachometer_profile_sh #DBEAFE
 rectangle "scripts/sample_host.sh\n0 local shell edges\n0 external tools" as shell_scripts_sample_host_sh #DBEAFE
 rectangle "scripts/serve_tachometer.sh\n0 local shell edges\n1 external tool" as shell_scripts_serve_tachometer_sh #DBEAFE
 cloud "cat" as tool_cat #FEF3C7
@@ -22,9 +23,7 @@ cloud "plutil" as tool_plutil #FEF3C7
 cloud "python3" as tool_python3 #FEF3C7
 cloud "rm" as tool_rm #FEF3C7
 cloud "rmdir" as tool_rmdir #FEF3C7
-cloud "run" as tool_run #FEF3C7
 cloud "sleep" as tool_sleep #FEF3C7
-cloud "summarize" as tool_summarize #FEF3C7
 cloud "tachometer" as tool_tachometer #FEF3C7
 cloud "tail" as tool_tail #FEF3C7
 shell_scripts_macos_install_powermetrics_collector_sh --> tool_cat
@@ -42,13 +41,11 @@ shell_scripts_refresh_tachometer_summaries_sh --> tool_mapfile
 shell_scripts_refresh_tachometer_summaries_sh --> tool_python3
 shell_scripts_refresh_tachometer_summaries_sh --> tool_tachometer
 shell_scripts_run_all_tachometer_snapshots_sh --> tool_python3
-shell_scripts_run_tachometer_profile_sh --> tool_run
-shell_scripts_run_tachometer_profile_sh --> tool_summarize
 shell_scripts_run_tachometer_profile_sh --> tool_tachometer
 shell_scripts_serve_tachometer_sh --> tool_tachometer
 note as shellGraphSummary
-Scanned 6 shell scripts.
+Scanned 7 shell scripts.
 Detected 0 local shell edges.
-Detected 16 external tools.
+Detected 14 external tools.
 end note
 @enduml

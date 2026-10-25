@@ -2,11 +2,13 @@
 set namespaceSeparator none
 top to bottom direction
 skinparam componentStyle rectangle
-rectangle "tachometer\n0 child pkg, 12 modules\n13 python files\nexamples: __main__, agent_usage, backlog" as tachometer
+rectangle "tachometer\n0 child pkg, 14 modules\n15 python files\nexamples: __main__, agent_usage, backlog" as tachometer
 rectangle "tachometer.__main__\n1 python file" as tachometer.__main__
 rectangle "tachometer.agent_usage\n1 python file" as tachometer.agent_usage
 rectangle "tachometer.backlog\n1 python file" as tachometer.backlog
+rectangle "tachometer.bench\n1 python file" as tachometer.bench
 rectangle "tachometer.cli\n1 python file" as tachometer.cli
+rectangle "tachometer.limiters\n1 python file" as tachometer.limiters
 rectangle "tachometer.manifest\n1 python file" as tachometer.manifest
 rectangle "tachometer.model\n1 python file" as tachometer.model
 rectangle "tachometer.notify\n1 python file" as tachometer.notify
@@ -19,6 +21,7 @@ tachometer --> tachometer.manifest
 tachometer --> tachometer.model
 tachometer --> tachometer.profile
 tachometer.__main__ --> tachometer.cli
+tachometer.bench --> tachometer.profile
 tachometer.cli --> tachometer.agent_usage
 tachometer.cli --> tachometer.backlog
 tachometer.cli --> tachometer.manifest
@@ -33,5 +36,6 @@ tachometer.server --> tachometer.backlog
 tachometer.server --> tachometer.profile
 tachometer.server --> tachometer.settings
 tachometer.server --> tachometer.stoplight
+tachometer.thermal --> tachometer.limiters
 tachometer.thermal --> tachometer.profile
 @enduml
