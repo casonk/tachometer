@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Keep the benchmark results table inside the thermal page on narrow screens
+  with an accessible horizontal-scroll region.
 - Document that recent Apple Silicon laptops publish no battery temperature to
   `ioreg`, so the macOS board reading stays empty there.
 - Add a root-run macOS collector (`scripts/macos/powermetrics_collector.py`,

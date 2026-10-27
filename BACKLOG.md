@@ -97,4 +97,8 @@ providers or kernel drivers, and the payoff does not justify that surface.
 
 ## Done
 
+- [x] [manual:2026-10-26] **Keep thermal benchmark results accessible on mobile.**
+  Put the wide results table in a labeled, keyboard-focusable horizontal-scroll
+  region so it no longer expands the page beyond the viewport.
+
 - [x] [manual:2026-10-18] **Benchmark suite (longer, repeatable)** — `tachometer bench` with weekly short / monthly mid / quarterly full tiers, nightly timer template, guardrails (quiet window, streaming check, upscaler paused, idle check, 78/72 °C stage stops with cool-down, lock, low priority, read-only), history in `.tachometer/bench-history.jsonl` and a Benchmarks card on `/thermal`. Follow-ups: charts of the history over time; fio-based random I/O if fio is installed.

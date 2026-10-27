@@ -163,6 +163,9 @@ def test_thermal_page_lists_benchmark_runs(tmp_path):
     page = thermal.render_page(tmp_path, controls={})
 
     assert "<h2>Benchmarks</h2>" in page
+    assert 'class="benchmark-table"' in page
+    assert 'aria-label="Benchmark results" tabindex="0"' in page
+    assert ".benchmark-table{max-width:100%;overflow-x:auto" in page
     assert "data 1,404 MB/s" in page and "45,000 MIPS" in page and "60.2 TFLOPS" in page
     assert "not idle" in page
     assert page.index("<td>short</td>") < page.index("<td>mid</td>")  # newest first

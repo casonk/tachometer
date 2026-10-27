@@ -46,3 +46,6 @@ should change how future sessions work in this repo.
   downstream migration explicitly coordinates a schema change.
 - Keep profiling outputs local-only under `.tachometer/` so tracked repos do
   not accumulate host-specific resource histories by default.
+- Keep wide telemetry tables inside a labeled, keyboard-focusable horizontal
+  scroll region rather than letting them expand a dashboard beyond the mobile
+  viewport.
