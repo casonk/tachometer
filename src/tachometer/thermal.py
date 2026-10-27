@@ -786,6 +786,8 @@ table{border-collapse:collapse;width:100%;font-size:.78rem;font-variant-numeric:
 th,td{text-align:right;padding:3px 8px;border-bottom:1px solid var(--rule)}
 th:first-child,td:first-child{text-align:left}
 .limits td,.limits th{text-align:left}
+.benchmark-table{max-width:100%;overflow-x:auto;overscroll-behavior-inline:contain}
+.benchmark-table table{min-width:800px}
 .controls{display:flex;flex-wrap:wrap;gap:10px 18px;align-items:end;margin-top:10px;font-size:.8rem}
 .controls form{display:flex;gap:6px;align-items:end}
 .controls label{display:flex;flex-direction:column;gap:3px;color:var(--ink2)}
@@ -1127,9 +1129,10 @@ def _bench_card(tachometer_root: Path, limit: int = 12) -> str:
         '<div class="sub" style="margin:0 0 6px">Nightly runs, newest first: weekly short, '
         "monthly mid, quarterly full. Load stages stop at 78 °C CPU / 80 °C GPU; skipped "
         "nights say why.</div>"
+        '<div class="benchmark-table" role="region" aria-label="Benchmark results" tabindex="0">'
         '<table class="limits"><thead><tr><th>Started</th><th>Tier</th><th>Result</th>'
         "<th>Cold read</th><th>Memory copy</th><th>CPU (7-Zip)</th><th>GPU FP16</th>"
-        f"<th>Peak CPU / GPU</th></tr></thead><tbody>{''.join(rows)}</tbody></table></div>"
+        f"<th>Peak CPU / GPU</th></tr></thead><tbody>{''.join(rows)}</tbody></table></div></div>"
     )
 
 
