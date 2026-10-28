@@ -16,7 +16,12 @@
 
 - https://psutil.readthedocs.io/ - host metric collection reference
 - https://git-scm.com/docs - git CLI reference for repo snapshot metadata
+- https://toml.io/en/ - TOML configuration format reference for repo profiling manifests
+- https://tomli.readthedocs.io/ - TOML parser fallback used on Python versions before 3.11
+- https://docs.anthropic.com/en/docs/claude-code - Claude Code reference for the local CLI status and usage-cache sidecar
+- https://learn.chatgpt.com/docs/codex/cli - Codex CLI reference for the local login and session-usage sidecar
+- https://docs.github.com/en/copilot/concepts/agents/about-copilot-cli - GitHub Copilot CLI reference for the local session-usage sidecar
 
 ## Notes
 
-- Optional GPU and Fedora sidecars are local integrations. Public refs are limited to the host-metric and VCS documentation behind the profiler.
+- GPU, Fedora, and AI-provider sidecars read local state; the provider entries above document the installed CLIs whose local caches and status commands are consumed.
