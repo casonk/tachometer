@@ -1605,6 +1605,7 @@ def _render_admin_page(tachometer_root: Path, saved: bool = False) -> str:
   a.back:hover{{color:#1e293b}}
   code{{background:#f1f5f9;padding:1px 5px;border-radius:3px;font-size:0.75rem}}
 </style>
+  <script src="/_portfolio/chrome.js" defer></script>
 </head>
 <body>
 <h1>&#9881;&#65039; Tachometer Admin</h1>
@@ -1763,6 +1764,7 @@ def _render_dashboard(
   a{{color:#3b82f6}}
   code{{background:#f1f5f9;padding:1px 4px;border-radius:3px;font-size:0.75rem}}
 </style>
+  <script src="/_portfolio/chrome.js" defer></script>
 </head>
 <body>
 <h1>&#127950; Tachometer</h1>

@@ -800,7 +800,7 @@ th:first-child,td:first-child{text-align:left}
 .msg{padding:8px 12px;border-radius:8px;margin-bottom:12px;font-size:.85rem;border:1px solid var(--rule)}
 .msg.ok{border-color:var(--good)}.msg.err{border-color:var(--critical)}
 summary{cursor:pointer;color:var(--ink2);font-size:.8rem}
-</style></head><body><main>
+</style><script src="/_portfolio/chrome.js" defer></script></head><body><main>
 <h1>Thermal history</h1>
 <div class="sub"><a href="/">&larr; Dashboard</a> &middot; __AGE__ &middot;
  <a href="/api/thermal?range=__RANGE__">JSON</a></div>
