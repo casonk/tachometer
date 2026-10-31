@@ -51,6 +51,15 @@ from .stoplight import (
 )
 from .stoplight import evaluate as stoplight_evaluate
 
+
+def _portfolio_site():
+    """Where the portfolio theme files come from (resolved per request, so a new link is seen)."""
+    from tachometer.portfolio import site
+
+    here = Path(__file__).resolve()
+    return site.resolve(here.parents[2], vendored=here.parent / "portfolio")
+
+
 # ---------------------------------------------------------------------------
 # Background snapshot runner
 # ---------------------------------------------------------------------------
@@ -1900,7 +1909,24 @@ class _Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(encoded)
 
+    def _send_portfolio(self) -> None:
+        """The portfolio theme and top bar files, when no Caddy in front answers them."""
+        asset = _portfolio_site().response(self.path)
+        if asset is None:
+            self._send("not found", "text/plain; charset=utf-8", 404)
+            return
+        body, content_type = asset
+        self.send_response(200)
+        self.send_header("Content-Type", content_type)
+        self.send_header("Content-Length", str(len(body)))
+        self.send_header("Cache-Control", "no-cache")
+        self.end_headers()
+        self.wfile.write(body)
+
     def do_GET(self) -> None:
+        if self.path.startswith("/_portfolio/"):
+            self._send_portfolio()
+            return
         parsed = urlparse(self.path)
         qs = parse_qs(parsed.query)
         view = qs.get("view", ["system"])[0]

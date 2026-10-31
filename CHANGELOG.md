@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Answer `/_portfolio/*` itself from a vendored portfolio site seam (`tachometer/portfolio/`), so the theme and top bar work with no Caddy in front: the owner-only site store first, then a pinned fallback copy. Add `/.portfolio` (ignored) and `config/portfolio-site.example.toml`. See traction-control `docs/portfolio-sites.md`.
+
 - Follow the portfolio system themes: the dashboard, admin and thermal pages take their colours from the shared tokens (`/_portfolio/theme.css`), so the theme chosen in the top bar restyles them. Status colours, the traffic-light dots and the bars use the theme's green, yellow and red.
 
 - Load the portfolio top bar (`<script src="/_portfolio/chrome.js" defer></script>`, served by the shared Caddy) on the dashboard, admin and thermal pages, so the global navigation and theme rotator appear here too.
