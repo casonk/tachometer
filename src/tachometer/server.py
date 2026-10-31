@@ -456,10 +456,10 @@ def _next_schedule_ts(hours: list[int]) -> float:
 
 
 _LIGHT_COLOR = {
-    "green": "#22c55e",
-    "yellow": "#eab308",
-    "red": "#ef4444",
-    "unknown": "#94a3b8",
+    "green": "var(--green)",
+    "yellow": "var(--yellow)",
+    "red": "var(--red)",
+    "unknown": "var(--muted)",
 }
 
 _LIGHT_LABEL = {
@@ -471,7 +471,7 @@ _LIGHT_LABEL = {
 
 
 def _dot(light: str) -> str:
-    c = _LIGHT_COLOR.get(light, "#94a3b8")
+    c = _LIGHT_COLOR.get(light, "var(--muted)")
     return (
         f'<span style="display:inline-block;width:12px;height:12px;border-radius:50%;'
         f'background:{c};vertical-align:middle;margin-right:5px"></span>'
@@ -479,10 +479,10 @@ def _dot(light: str) -> str:
 
 
 def _badge(light: str) -> str:
-    c = _LIGHT_COLOR.get(light, "#94a3b8")
+    c = _LIGHT_COLOR.get(light, "var(--muted)")
     label = _LIGHT_LABEL.get(light, "—")
     return (
-        f'<span style="background:{c};color:white;padding:2px 8px;border-radius:4px;'
+        f'<span style="background:{c};color:var(--accent-ink);padding:2px 8px;border-radius:4px;'
         f'font-size:0.7rem;font-weight:700;letter-spacing:.04em">{label}</span>'
     )
 
@@ -503,10 +503,10 @@ def _temperature_light(value: float, yellow_at: float, red_at: float) -> str:
 
 
 def _banner_metric(label: str, value: str, light: str) -> str:
-    c = _LIGHT_COLOR.get(light, "#94a3b8")
+    c = _LIGHT_COLOR.get(light, "var(--muted)")
     return (
-        f'<span style="padding:6px 10px;border:1px solid #e2e8f0;border-radius:999px;'
-        f'background:#f8fafc;font-size:0.78rem;color:#475569">{label}&nbsp;'
+        f'<span style="padding:6px 10px;border:1px solid var(--border);border-radius:999px;'
+        f'background:var(--bg);font-size:0.78rem;color:var(--text)">{label}&nbsp;'
         f'<strong style="color:{c}">{value}</strong></span>'
     )
 
@@ -525,7 +525,7 @@ def _render_host_banner(host: dict[str, Any]) -> str:
     backlog_open = host.get("backlog_open", 0)
     host_badge = (
         f'<span title="{backlog_open} open host backlog item(s)" '
-        f'style="background:#ef4444;color:white;border-radius:10px;'
+        f'style="background:var(--red);color:var(--accent-ink);border-radius:10px;'
         f'padding:1px 6px;font-size:0.65rem;font-weight:700;margin-left:4px"> '
         f"{backlog_open}</span>"
         if backlog_open
@@ -777,9 +777,9 @@ def _gauge(
     yellow_max: float | None = None,
 ) -> str:
     if value is None:
-        return '<span style="color:#94a3b8">—</span>'
+        return '<span style="color:var(--muted)">—</span>'
     pct = min(100.0, value / max_val * 100.0)
-    c = _LIGHT_COLOR.get(light, "#94a3b8")
+    c = _LIGHT_COLOR.get(light, "var(--muted)")
     display = label if label is not None else f"{value:.1f}"
 
     markers = ""
@@ -787,20 +787,20 @@ def _gauge(
         gp = min(100.0, green_max / max_val * 100.0)
         markers += (
             f'<div title="yellow threshold: {green_max}" style="position:absolute;top:-1px;'
-            f"left:{gp:.1f}%;width:1.5px;height:8px;background:#eab308;"
+            f"left:{gp:.1f}%;width:1.5px;height:8px;background:var(--yellow);"
             f'border-radius:1px;transform:translateX(-50%)"></div>'
         )
     if yellow_max is not None and max_val > 0:
         yp = min(100.0, yellow_max / max_val * 100.0)
         markers += (
             f'<div title="red threshold: {yellow_max}" style="position:absolute;top:-1px;'
-            f"left:{yp:.1f}%;width:1.5px;height:8px;background:#ef4444;"
+            f"left:{yp:.1f}%;width:1.5px;height:8px;background:var(--red);"
             f'border-radius:1px;transform:translateX(-50%)"></div>'
         )
 
     return (
         f'<div style="font-size:0.78rem">{display}</div>'
-        f'<div style="position:relative;width:80px;height:6px;background:#e2e8f0;'
+        f'<div style="position:relative;width:80px;height:6px;background:var(--surface2);'
         f'border-radius:3px;margin-top:2px;overflow:visible">'
         f'<div style="width:{pct:.1f}%;height:6px;background:{c};border-radius:3px"></div>'
         f"{markers}"
@@ -877,17 +877,17 @@ def _render_light_tally(tally: dict[str, dict[str, int]]) -> str:
         if not parts:
             continue
         chips.append(
-            f'<span style="padding:3px 8px;border:1px solid #e2e8f0;border-radius:999px;'
-            f'font-size:0.72rem;color:#64748b;background:white;white-space:nowrap">'
+            f'<span style="padding:3px 8px;border:1px solid var(--border);border-radius:999px;'
+            f'font-size:0.72rem;color:var(--muted);background:var(--surface);white-space:nowrap">'
             f"{label}&nbsp;{'&thinsp;'.join(parts)}</span>"
         )
     if not chips:
         return ""
     return (
         '<div style="display:flex;gap:5px;flex-wrap:wrap;margin:10px 0 6px;'
-        "padding:8px 12px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;"
+        "padding:8px 12px;background:var(--bg);border:1px solid var(--border);border-radius:8px;"
         'align-items:center">'
-        '<span style="font-size:0.7rem;color:#94a3b8;margin-right:4px;white-space:nowrap">'
+        '<span style="font-size:0.7rem;color:var(--muted);margin-right:4px;white-space:nowrap">'
         "Lights:</span>" + "".join(chips) + "</div>"
     )
 
@@ -928,14 +928,14 @@ def _render_loc_aggregate(repos: list[dict[str, Any]]) -> str:
 
     def _chip(label: str, value: str, note: str = "") -> str:
         note_html = (
-            f'<span style="font-size:0.65rem;color:#94a3b8;margin-left:4px">{note}</span>'
+            f'<span style="font-size:0.65rem;color:var(--muted);margin-left:4px">{note}</span>'
             if note
             else ""
         )
         return (
-            f'<span style="padding:4px 10px;border:1px solid #e2e8f0;border-radius:999px;'
-            f'background:white;font-size:0.75rem;color:#475569;white-space:nowrap">'
-            f'{label}&nbsp;<strong style="color:#1e293b">{value}</strong>{note_html}</span>'
+            f'<span style="padding:4px 10px;border:1px solid var(--border);border-radius:999px;'
+            f'background:var(--surface);font-size:0.75rem;color:var(--text);white-space:nowrap">'
+            f'{label}&nbsp;<strong style="color:var(--text)">{value}</strong>{note_html}</span>'
         )
 
     chips = [
@@ -951,9 +951,9 @@ def _render_loc_aggregate(repos: list[dict[str, Any]]) -> str:
     )
     return (
         '<div style="display:flex;gap:6px;flex-wrap:wrap;margin:10px 0 6px;'
-        "padding:8px 12px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;"
+        "padding:8px 12px;background:var(--bg);border:1px solid var(--border);border-radius:8px;"
         'align-items:center">'
-        '<span style="font-size:0.7rem;color:#94a3b8;margin-right:4px;white-space:nowrap">'
+        '<span style="font-size:0.7rem;color:var(--muted);margin-right:4px;white-space:nowrap">'
         "Lines of Code:</span>" + "".join(chips) + "</div>"
     )
 
@@ -969,8 +969,8 @@ def _tab_bar(current_view: str, port: int) -> str:
     tabs = []
     for view, label in _VIEW_LABELS.items():
         active = view == current_view
-        bg = "#1e293b" if active else "#e2e8f0"
-        color = "#e2e8f0" if active else "#475569"
+        bg = "var(--text)" if active else "var(--surface2)"
+        color = "var(--surface)" if active else "var(--text)"
         tabs.append(
             f'<a href="/?view={view}" style="padding:6px 16px;border-radius:6px;'
             f"background:{bg};color:{color};text-decoration:none;font-size:0.8rem;"
@@ -1024,22 +1024,24 @@ def _render_system_row(
 
     def _size_row(label: str, val: float | None, light: str = "unknown") -> str:
         bar = _gauge(val, max_repo_bytes, light, label=_fmt_bytes(val), **_sz_t)
-        return f'<div style="font-size:0.68rem;color:#94a3b8;margin-top:4px">{label}</div>{bar}'
+        return (
+            f'<div style="font-size:0.68rem;color:var(--muted);margin-top:4px">{label}</div>{bar}'
+        )
 
     def _sub_gauge(label: str, pct: float | None, light: str, t: dict) -> str:
         green_max_pct = t["green_max"] * 100
         yellow_max_pct = t["yellow_max"] * 100
         g = _gauge(pct, 100, light, green_max=green_max_pct, yellow_max=yellow_max_pct)
-        return f'<div style="font-size:0.65rem;color:#94a3b8;margin-top:5px">{label}</div>{g}'
+        return f'<div style="font-size:0.65rem;color:var(--muted);margin-top:5px">{label}</div>{g}'
 
-    dirty_span = f', <span style="color:#ef4444">{int(dirty)}\u2717</span>' if dirty else ""
+    dirty_span = f', <span style="color:var(--red)">{int(dirty)}\u2717</span>' if dirty else ""
     commit_span = (
-        f'<div style="font-size:0.65rem;color:#94a3b8">{int(commits):,} commits</div>'
+        f'<div style="font-size:0.65rem;color:var(--muted)">{int(commits):,} commits</div>'
         if commits
         else ""
     )
     dep_span = (
-        f'<div style="font-size:0.65rem;color:#94a3b8">{int(dep_count)} deps</div>'
+        f'<div style="font-size:0.65rem;color:var(--muted)">{int(dep_count)} deps</div>'
         if dep_count
         else ""
     )
@@ -1051,12 +1053,12 @@ def _render_system_row(
     if config_lines:
         loc_parts.append(f"{_fmt_loc(int(config_lines))} cfg")
     loc_span = (
-        f'<div style="font-size:0.65rem;color:#94a3b8">{" · ".join(loc_parts)}</div>'
+        f'<div style="font-size:0.65rem;color:var(--muted)">{" · ".join(loc_parts)}</div>'
         if loc_parts
         else ""
     )
     repo_cell = (
-        f'<div style="font-size:0.7rem;color:#64748b">'
+        f'<div style="font-size:0.7rem;color:var(--muted)">'
         f"{int(files) if files else '—'} tracked{dirty_span}</div>"
         + commit_span
         + dep_span
@@ -1069,7 +1071,7 @@ def _render_system_row(
         + _size_row("non-ignored", non_ignored_size, light_max(non_ignored_size, **_sz_t))
         + _size_row("tracked", tracked_size, light_max(tracked_size, **_sz_t))
         + (
-            f'<div style="font-size:0.68rem;color:#94a3b8;margin-top:4px">artefacts</div>'
+            f'<div style="font-size:0.68rem;color:var(--muted);margin-top:4px">artefacts</div>'
             f"{_gauge(artefact_size, 1e9, art_light, label=_fmt_bytes(artefact_size), **_art_t)}"
             if artefact_size
             else ""
@@ -1111,7 +1113,7 @@ def _name_cell(repo: dict[str, Any]) -> str:
     if count:
         badge = (
             f'<span title="{count} open backlog item(s)" '
-            f'style="background:#ef4444;color:white;border-radius:10px;'
+            f'style="background:var(--red);color:var(--accent-ink);border-radius:10px;'
             f"padding:1px 6px;font-size:0.65rem;font-weight:700;"
             f'margin-left:6px;vertical-align:middle">{count}</span>'
         )
@@ -1123,7 +1125,7 @@ def _no_run_cell(repo: dict[str, Any], colspan: int) -> str:
     no_run_reason = repo.get("no_run_reason", "")
     run_command = repo.get("run_command", "")
     if no_run_reason:
-        msg = f'<span style="color:#94a3b8">{no_run_reason}</span>'
+        msg = f'<span style="color:var(--muted)">{no_run_reason}</span>'
     elif run_command:
         msg = f"Awaiting first run &mdash; <code>{run_command}</code>"
     else:
@@ -1141,13 +1143,13 @@ def _schedule_cell(repo: dict[str, Any], next_run_ts: float) -> str:
 
     if last_ts is not None:
         last_rel = _fmt_rel_time(last_ts - now)  # negative → "X ago"
-        last_str = f'<div style="font-size:0.72rem;color:#64748b">\u25b6 {last_rel}</div>'
+        last_str = f'<div style="font-size:0.72rem;color:var(--muted)">\u25b6 {last_rel}</div>'
     else:
-        last_str = '<div style="font-size:0.72rem;color:#94a3b8">no data yet</div>'
+        last_str = '<div style="font-size:0.72rem;color:var(--muted)">no data yet</div>'
 
     next_rel = _fmt_rel_time(next_run_ts - now)  # positive → "in X"
     next_str = (
-        f'<div style="font-size:0.72rem;color:#475569;margin-top:3px">\u23f0 {next_rel}</div>'
+        f'<div style="font-size:0.72rem;color:var(--text);margin-top:3px">\u23f0 {next_rel}</div>'
     )
     return last_str + next_str
 
@@ -1195,7 +1197,7 @@ def _render_delta_row(repo: dict[str, Any], next_run_ts: float = 0.0) -> str:
             label=_fmt_bytes(v),
             **_dt[thresh_key],
         )
-        return f'<div style="font-size:0.65rem;color:#94a3b8;margin-top:5px">{label}</div>{g}'
+        return f'<div style="font-size:0.65rem;color:var(--muted);margin-top:5px">{label}</div>{g}'
 
     cpu_gauge = _gauge(
         _clamp(cpu),
@@ -1235,7 +1237,7 @@ def _render_delta_row(repo: dict[str, Any], next_run_ts: float = 0.0) -> str:
         f"<td>{gpu_gauge}</td>"
         f"<td>{disk_cell}</td>"
         f"<td>{net_cell}</td>"
-        f'<td style="color:#64748b;font-size:0.75rem">{pair_count} pairs</td>'
+        f'<td style="color:var(--muted);font-size:0.75rem">{pair_count} pairs</td>'
         f"<td>{_schedule_cell(repo, next_run_ts)}</td>"
         f"</tr>"
     )
@@ -1278,7 +1280,7 @@ def _render_process_row(repo: dict[str, Any], next_run_ts: float = 0.0) -> str:
     last_run_at = rs.get("last_run_at")
 
     rt_sublabel = (
-        f'<div style="font-size:0.65rem;color:#94a3b8">latest {_fmt_runtime(latest_rt)}</div>'
+        f'<div style="font-size:0.65rem;color:var(--muted)">latest {_fmt_runtime(latest_rt)}</div>'
         if latest_rt is not None
         else ""
     )
@@ -1301,9 +1303,9 @@ def _render_process_row(repo: dict[str, Any], next_run_ts: float = 0.0) -> str:
             if (fmt_fn and val is not None)
             else (f"{int(val):,}" if val is not None else "—")
         )
-        c = _LIGHT_COLOR.get(light, "#94a3b8")
+        c = _LIGHT_COLOR.get(light, "var(--muted)")
         return (
-            f'<div style="font-size:0.65rem;color:#94a3b8;margin-top:4px">{label}</div>'
+            f'<div style="font-size:0.65rem;color:var(--muted);margin-top:4px">{label}</div>'
             f'<div style="font-size:0.78rem;color:{c}">{display}</div>'
         )
 
@@ -1334,25 +1336,29 @@ def _render_process_row(repo: dict[str, Any], next_run_ts: float = 0.0) -> str:
 
     # Last-run / failure summary appended below the numeric extras.
     if last_failed_at is not None:
-        fail_color = "#ef4444"
+        fail_color = "var(--red)"
         fail_label = f"exit {last_failed_rc}" if last_failed_rc is not None else "failed"
         extras_cell += (
-            f'<div style="font-size:0.65rem;color:#94a3b8;margin-top:6px">last fail</div>'
+            f'<div style="font-size:0.65rem;color:var(--muted);margin-top:6px">last fail</div>'
             f'<div style="font-size:0.78rem;color:{fail_color}">'
             f"{_fmt_age(last_failed_at)} ({fail_label})</div>"
         )
     success_count = run_count - fail_count
     if run_count:
         rate_pct = round(success_count / run_count * 100)
-        rate_color = "#22c55e" if rate_pct == 100 else ("#eab308" if rate_pct >= 80 else "#ef4444")
+        rate_color = (
+            "var(--green)"
+            if rate_pct == 100
+            else ("var(--yellow)" if rate_pct >= 80 else "var(--red)")
+        )
         extras_cell += (
-            f'<div style="font-size:0.65rem;color:#94a3b8;margin-top:4px">success rate</div>'
+            f'<div style="font-size:0.65rem;color:var(--muted);margin-top:4px">success rate</div>'
             f'<div style="font-size:0.78rem;color:{rate_color}">'
             f"{rate_pct}% ({success_count}/{run_count})</div>"
         )
     last_run_suffix = ""
     if last_run_at:
-        last_run_suffix = f"<br><span style='color:#94a3b8'>{_fmt_age(last_run_at)}</span>"
+        last_run_suffix = f"<br><span style='color:var(--muted)'>{_fmt_age(last_run_at)}</span>"
 
     return (
         f"<tr>"
@@ -1364,7 +1370,7 @@ def _render_process_row(repo: dict[str, Any], next_run_ts: float = 0.0) -> str:
         f"<td>{_gauge(peak_rss, 4e9, lights.get('proc_peak_rss', 'unknown'), label=_fmt_bytes(peak_rss), **_pt['proc_peak_memory_rss_bytes'])}</td>"
         f"<td>{rt_gauge}</td>"
         f"<td>{extras_cell}</td>"
-        f'<td style="color:#64748b;font-size:0.75rem">{qualifying} runs'
+        f'<td style="color:var(--muted);font-size:0.75rem">{qualifying} runs'
         f"{last_run_suffix}"
         f"</td>"
         f"<td>{_schedule_cell(repo, next_run_ts)}</td>"
@@ -1397,28 +1403,28 @@ def _run_button(view: str = "system") -> str:
     if running:
         elapsed = int(time.time() - (started_at or time.time()))
         label = f"Running\u2026 {elapsed}s"
-        btn_style = "background:#94a3b8;color:white;cursor:not-allowed"
+        btn_style = "background:var(--muted);color:var(--accent-ink);cursor:not-allowed"
         disabled = "disabled"
         last_line = _tail_log(log_path)
         status = (
-            f'<span style="color:#94a3b8;font-size:0.72rem;margin-left:10px">{last_line}</span>'
+            f'<span style="color:var(--muted);font-size:0.72rem;margin-left:10px">{last_line}</span>'
             if last_line
             else ""
         )
     else:
         label = "Run All Snapshots"
-        btn_style = "background:#1e293b;color:#e2e8f0;cursor:pointer"
+        btn_style = "background:var(--text);color:var(--surface);cursor:pointer"
         disabled = ""
         status = ""
         if last_finished is not None:
             finished_str = time.strftime("%H:%M:%S", time.localtime(last_finished))
             if last_exit == 0:
-                status = f'<span style="color:#22c55e;font-size:0.75rem;margin-left:10px">\u2713 OK at {finished_str}</span>'
+                status = f'<span style="color:var(--green);font-size:0.75rem;margin-left:10px">\u2713 OK at {finished_str}</span>'
             else:
                 last_line = _tail_log(log_path)
                 detail = f" &mdash; {last_line}" if last_line else ""
                 status = (
-                    f'<span style="color:#ef4444;font-size:0.75rem;margin-left:10px">'
+                    f'<span style="color:var(--red);font-size:0.75rem;margin-left:10px">'
                     f"\u2717 Failed (exit {last_exit}) at {finished_str}{detail}</span>"
                 )
 
@@ -1449,16 +1455,16 @@ def _build_live_payload(disk_path: str | None = None) -> dict[str, Any]:
 
 
 _LIVE_PANEL_HTML = """\
-<div id="live-panel" style="margin:10px 0 6px;padding:10px 14px;background:#f0f9ff;
-  border:1px solid #bae6fd;border-radius:8px">
+<div id="live-panel" style="margin:10px 0 6px;padding:10px 14px;background:var(--bg);
+  border:1px solid var(--accent);border-radius:8px">
   <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:8px">
-    <span id="live-dot" style="width:8px;height:8px;border-radius:50%;background:#22c55e;
+    <span id="live-dot" style="width:8px;height:8px;border-radius:50%;background:var(--green);
       display:inline-block;flex-shrink:0"></span>
-    <strong style="font-size:0.8rem;color:#0369a1">Live System</strong>
+    <strong style="font-size:0.8rem;color:var(--accent)">Live System</strong>
     <select id="live-interval-select"
       onchange="window._tachLive.setInterval(this.value)"
-      style="font-size:0.75rem;padding:2px 6px;border:1px solid #bae6fd;
-        border-radius:4px;background:white;color:#475569">
+      style="font-size:0.75rem;padding:2px 6px;border:1px solid var(--accent);
+        border-radius:4px;background:var(--surface);color:var(--text)">
       <option value="5">5 s</option>
       <option value="10">10 s</option>
       <option value="30">30 s</option>
@@ -1467,11 +1473,11 @@ _LIVE_PANEL_HTML = """\
       <option value="300">5 m</option>
       <option value="0">Off</option>
     </select>
-    <span id="live-age" style="font-size:0.7rem;color:#94a3b8">—</span>
+    <span id="live-age" style="font-size:0.7rem;color:var(--muted)">—</span>
   </div>
-  <div id="live-metrics" style="font-size:0.78rem;color:#475569;
+  <div id="live-metrics" style="font-size:0.78rem;color:var(--text);
     display:flex;gap:6px 16px;flex-wrap:wrap;align-items:baseline">
-    <span style="color:#94a3b8">Awaiting first poll…</span>
+    <span style="color:var(--muted)">Awaiting first poll…</span>
   </div>
 </div>
 <script>
@@ -1479,12 +1485,12 @@ _LIVE_PANEL_HTML = """\
   var _timer = null, _ageTimer = null, _lastMs = null;
 
   function _c(pct, g, y) {
-    return pct == null ? '#94a3b8' : pct <= g ? '#22c55e' : pct <= y ? '#eab308' : '#ef4444';
+    return pct == null ? 'var(--muted)' : pct <= g ? 'var(--green)' : pct <= y ? 'var(--yellow)' : 'var(--red)';
   }
   function _bar(pct, g, y) {
     if (pct == null) return '';
     var clamped = Math.min(100, Math.max(0, pct));
-    return '<span style="display:inline-block;width:52px;height:5px;background:#e2e8f0;' +
+    return '<span style="display:inline-block;width:52px;height:5px;background:var(--surface2);' +
       'border-radius:3px;vertical-align:middle;margin:0 3px">' +
       '<span style="display:block;width:' + clamped + '%;height:100%;background:' +
       _c(pct, g, y) + ';border-radius:3px"></span></span>';
@@ -1524,7 +1530,7 @@ _LIVE_PANEL_HTML = """\
     parts.push(_m('Procs', d.process_count != null ? d.process_count.toLocaleString() : '—', null));
     parts.push(_m('Up', _uptime(d.uptime_seconds), null));
     document.getElementById('live-metrics').innerHTML = parts.join(
-      '<span style="color:#e2e8f0;margin:0 2px">|</span>');
+      '<span style="color:var(--surface);margin:0 2px">|</span>');
   }
 
   function poll() {
@@ -1569,8 +1575,8 @@ def _render_admin_page(tachometer_root: Path, saved: bool = False) -> str:
     run_days = int(ret.get("run_days", 365))
     backlog_days = int(ret.get("backlog_resolved_days", 365))
     saved_banner = (
-        '<div style="background:#dcfce7;border:1px solid #86efac;border-radius:6px;'
-        'padding:8px 14px;margin-bottom:16px;color:#166534;font-size:0.82rem">'
+        '<div style="background:var(--green-dim);border:1px solid var(--green);border-radius:6px;'
+        'padding:8px 14px;margin-bottom:16px;color:var(--green);font-size:0.82rem">'
         "&#10003; Settings saved successfully.</div>"
         if saved
         else ""
@@ -1581,29 +1587,31 @@ def _render_admin_page(tachometer_root: Path, saved: bool = False) -> str:
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Tachometer — Admin</title>
+<link rel="stylesheet" href="/_portfolio/theme.css">
+<script src="/_portfolio/theme.js"></script>
 <style>
   *{{box-sizing:border-box;margin:0;padding:0}}
   body{{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
-        background:#f8fafc;color:#1e293b;padding:24px;font-size:14px;max-width:640px}}
+        background:var(--bg);color:var(--text);padding:24px;font-size:14px;max-width:640px}}
   h1{{font-size:1.3rem;font-weight:700;margin-bottom:4px}}
-  .sub{{color:#64748b;font-size:0.8rem;margin-bottom:20px}}
-  .card{{background:white;border:1px solid #e2e8f0;border-radius:10px;
+  .sub{{color:var(--muted);font-size:0.8rem;margin-bottom:20px}}
+  .card{{background:var(--surface);border:1px solid var(--border);border-radius:10px;
          padding:20px 24px;box-shadow:0 1px 3px rgba(0,0,0,.06)}}
   h2{{font-size:0.9rem;font-weight:700;text-transform:uppercase;letter-spacing:.05em;
-      color:#475569;margin-bottom:14px}}
+      color:var(--text);margin-bottom:14px}}
   .field{{margin-bottom:16px}}
-  label{{display:block;font-size:0.82rem;font-weight:600;color:#374151;margin-bottom:4px}}
-  .hint{{font-size:0.72rem;color:#94a3b8;margin-top:3px}}
-  input[type=number]{{width:120px;padding:6px 10px;border:1px solid #cbd5e1;
-    border-radius:6px;font-size:0.85rem;color:#1e293b}}
-  input[type=number]:focus{{outline:2px solid #3b82f6;border-color:#3b82f6}}
+  label{{display:block;font-size:0.82rem;font-weight:600;color:var(--text);margin-bottom:4px}}
+  .hint{{font-size:0.72rem;color:var(--muted);margin-top:3px}}
+  input[type=number]{{width:120px;padding:6px 10px;border:1px solid var(--border);
+    border-radius:6px;font-size:0.85rem;color:var(--text)}}
+  input[type=number]:focus{{outline:2px solid var(--accent);border-color:var(--accent)}}
   .actions{{display:flex;gap:10px;align-items:center;margin-top:20px}}
-  button{{padding:8px 18px;background:#1e293b;color:#e2e8f0;border:none;
+  button{{padding:8px 18px;background:var(--text);color:var(--surface);border:none;
           border-radius:6px;font-size:0.82rem;font-weight:600;cursor:pointer}}
-  button:hover{{background:#334155}}
-  a.back{{color:#64748b;font-size:0.8rem;text-decoration:none}}
-  a.back:hover{{color:#1e293b}}
-  code{{background:#f1f5f9;padding:1px 5px;border-radius:3px;font-size:0.75rem}}
+  button:hover{{background:var(--text)}}
+  a.back{{color:var(--muted);font-size:0.8rem;text-decoration:none}}
+  a.back:hover{{color:var(--text)}}
+  code{{background:var(--bg);padding:1px 5px;border-radius:3px;font-size:0.75rem}}
 </style>
   <script src="/_portfolio/chrome.js" defer></script>
 </head>
@@ -1613,7 +1621,7 @@ def _render_admin_page(tachometer_root: Path, saved: bool = False) -> str:
 {saved_banner}
 <div class="card">
   <h2>Data Retention</h2>
-  <p style="font-size:0.78rem;color:#64748b;margin-bottom:16px">
+  <p style="font-size:0.78rem;color:var(--muted);margin-bottom:16px">
     Controls how long historical data is kept in <code>.tachometer/</code> directories.
     Settings are stored in <code>config/tachometer/settings.toml</code>.
   </p>
@@ -1642,7 +1650,7 @@ def _render_admin_page(tachometer_root: Path, saved: bool = False) -> str:
     </div>
   </form>
 </div>
-<div style="margin-top:12px;font-size:0.7rem;color:#94a3b8">
+<div style="margin-top:12px;font-size:0.7rem;color:var(--muted)">
   Settings file: {s_path}
 </div>
 </body>
@@ -1665,7 +1673,7 @@ def _render_dashboard(
     has_key = f"has_{view}" if view != "system" else "has_data"
     all_lights = {r[stoplight_key].get("overall_light", "unknown") for r in repos if r.get(has_key)}
     portfolio_light = worst_light({i: light for i, light in enumerate(all_lights)})  # type: ignore[arg-type]
-    portfolio_color = _LIGHT_COLOR.get(portfolio_light, "#94a3b8")
+    portfolio_color = _LIGHT_COLOR.get(portfolio_light, "var(--muted)")
     portfolio_label = {
         "green": "All Systems Normal",
         "yellow": "Watch — Pressure Detected",
@@ -1708,8 +1716,8 @@ def _render_dashboard(
         if cat != current_category:
             current_category = cat
             rows.append(
-                f'<tr><td colspan="{col_count}" style="background:#f1f5f9;font-size:0.7rem;'
-                f"font-weight:700;color:#64748b;text-transform:uppercase;"
+                f'<tr><td colspan="{col_count}" style="background:var(--bg);font-size:0.7rem;'
+                f"font-weight:700;color:var(--muted);text-transform:uppercase;"
                 f'letter-spacing:.08em;padding:6px 14px">{cat}</td></tr>'
             )
 
@@ -1717,7 +1725,7 @@ def _render_dashboard(
             if not repo["has_data"]:
                 rows.append(
                     f"<tr><td>{_name_cell(repo)}</td>"
-                    f'<td colspan="{col_count - 1}" style="color:#94a3b8;font-size:0.8rem">No data — '
+                    f'<td colspan="{col_count - 1}" style="color:var(--muted);font-size:0.8rem">No data — '
                     f"run ./scripts/run_tachometer_profile.sh snapshot</td></tr>"
                 )
                 continue
@@ -1741,28 +1749,30 @@ def _render_dashboard(
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta http-equiv="refresh" content="{refresh_interval}">
 <title>Tachometer — Portfolio Dashboard</title>
+<link rel="stylesheet" href="/_portfolio/theme.css">
+<script src="/_portfolio/theme.js"></script>
 <style>
   *{{box-sizing:border-box;margin:0;padding:0}}
   body{{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
-        background:#f8fafc;color:#1e293b;padding:24px;font-size:14px}}
+        background:var(--bg);color:var(--text);padding:24px;font-size:14px}}
   h1{{font-size:1.4rem;font-weight:700}}
-  .sub{{color:#64748b;font-size:0.8rem;margin-top:2px;margin-bottom:12px}}
-  .desc{{color:#64748b;font-size:0.78rem;margin-bottom:14px;font-style:italic}}
+  .sub{{color:var(--muted);font-size:0.8rem;margin-top:2px;margin-bottom:12px}}
+  .desc{{color:var(--muted);font-size:0.78rem;margin-bottom:14px;font-style:italic}}
   .banner{{display:flex;align-items:center;gap:12px;padding:12px 18px;
-           border-radius:10px;background:white;margin-bottom:22px;
+           border-radius:10px;background:var(--surface);margin-bottom:22px;
            border:2px solid {portfolio_color};box-shadow:0 1px 3px rgba(0,0,0,.07)}}
   .bdot{{width:18px;height:18px;border-radius:50%;background:{portfolio_color};flex-shrink:0}}
   .blabel{{font-size:1rem;font-weight:600;color:{portfolio_color}}}
-  table{{width:100%;border-collapse:collapse;background:white;border-radius:10px;
+  table{{width:100%;border-collapse:collapse;background:var(--surface);border-radius:10px;
          box-shadow:0 1px 3px rgba(0,0,0,.07);overflow:hidden}}
-  th{{background:#1e293b;color:#e2e8f0;padding:9px 14px;text-align:left;
+  th{{background:var(--text);color:var(--surface);padding:9px 14px;text-align:left;
       font-size:0.7rem;font-weight:600;text-transform:uppercase;letter-spacing:.06em}}
-  td{{padding:9px 14px;border-bottom:1px solid #f1f5f9;vertical-align:middle}}
+  td{{padding:9px 14px;border-bottom:1px solid var(--border);vertical-align:middle}}
   tr:last-child td{{border-bottom:none}}
-  tr:hover td{{background:#f8fafc}}
-  .foot{{color:#94a3b8;font-size:0.7rem;text-align:right;margin-top:10px}}
-  a{{color:#3b82f6}}
-  code{{background:#f1f5f9;padding:1px 4px;border-radius:3px;font-size:0.75rem}}
+  tr:hover td{{background:var(--bg)}}
+  .foot{{color:var(--muted);font-size:0.7rem;text-align:right;margin-top:10px}}
+  a{{color:var(--accent)}}
+  code{{background:var(--bg);padding:1px 4px;border-radius:3px;font-size:0.75rem}}
 </style>
   <script src="/_portfolio/chrome.js" defer></script>
 </head>
@@ -1785,7 +1795,7 @@ def _render_dashboard(
       <div class="bdot"></div>
       <div>
         <div class="blabel">{portfolio_label}</div>
-        <div style="font-size:0.78rem;color:#64748b">Portfolio {view} aggregate</div>
+        <div style="font-size:0.78rem;color:var(--muted)">Portfolio {view} aggregate</div>
       </div>
     </div>
     <div style="display:flex;flex-direction:column;align-items:flex-end;gap:8px">
