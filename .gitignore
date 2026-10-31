@@ -33,3 +33,6 @@ config/tachometer/bench.local.toml
 # Local-only downstream inventory: may name private repositories, which the
 # tracked downstream-repos.toml must not. Ship only the .example template.
 config/downstream-repos.local.toml
+
+# Link to this checkout's entry in the portfolio site store (owner-only, local)
+/.portfolio
