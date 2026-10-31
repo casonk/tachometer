@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Load the portfolio top bar (`<script src="/_portfolio/chrome.js" defer></script>`, served by the shared Caddy) on the dashboard, admin and thermal pages, so the global navigation and theme rotator appear here too.
 - Keep the benchmark results table inside the thermal page on narrow screens
   with an accessible horizontal-scroll region.
 - Document that recent Apple Silicon laptops publish no battery temperature to
