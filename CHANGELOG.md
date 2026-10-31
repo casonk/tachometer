@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Follow the portfolio system themes: the dashboard, admin and thermal pages take their colours from the shared tokens (`/_portfolio/theme.css`), so the theme chosen in the top bar restyles them. Status colours, the traffic-light dots and the bars use the theme's green, yellow and red.
+
 - Load the portfolio top bar (`<script src="/_portfolio/chrome.js" defer></script>`, served by the shared Caddy) on the dashboard, admin and thermal pages, so the global navigation and theme rotator appear here too.
 - Keep the benchmark results table inside the thermal page on narrow screens
   with an accessible horizontal-scroll region.

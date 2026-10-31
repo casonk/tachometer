@@ -741,13 +741,13 @@ _PAGE = """<!doctype html>
 <html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Tachometer · Thermal</title>
+<link rel="stylesheet" href="/_portfolio/theme.css">
+<script src="/_portfolio/theme.js"></script>
 <style>
-:root{--plane:#f9f9f7;--surface:#fcfcfb;--ink:#0b0b0b;--ink2:#52514e;--rule:#e6e5e1;
- --s1:#2a78d6;--s2:#eb6834;--s3:#1baf7a;--s4:#eda100;--s5:#8a5cd6;--s6:#d6409f;
- --good:#0ca30c;--warning:#b97b00;--critical:#d03b3b;--none:#8a8983}
-@media (prefers-color-scheme:dark){:root{--plane:#0d0d0d;--surface:#1a1a19;--ink:#f0efec;
- --ink2:#c3c2b7;--rule:#32322f;--s1:#3987e5;--s2:#d95926;--s3:#199e70;--s4:#c98500;--s5:#a07ae8;--s6:#e05aab;
- --warning:#fab219;--none:#8a8983}}
+:root{--plane:var(--bg);--ink:var(--text);--ink2:var(--muted);--rule:var(--border);
+ --s1:var(--accent);--s2:var(--red);--s3:var(--green);--s4:var(--yellow);--s5:var(--purple);
+ --s6:color-mix(in srgb,var(--accent) 50%,var(--red));
+ --good:var(--green);--warning:var(--yellow);--critical:var(--red);--none:var(--muted)}
 *{box-sizing:border-box}
 body{margin:0;padding:20px 16px 40px;background:var(--plane);color:var(--ink);
  font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;font-size:14px}
