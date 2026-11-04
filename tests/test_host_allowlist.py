@@ -266,3 +266,51 @@ class TestServeWiring:
         )
         assert handler.enforce_host is True
         assert handler.allowed_hosts == frozenset({"lan.example"})
+
+
+class TestRegisteredHostname:
+    """The site's own hostname comes from the portfolio store, so no local file is needed."""
+
+    @pytest.fixture
+    def registered(self, tmp_path, monkeypatch):
+        entry = tmp_path / "owner__repo"
+        entry.mkdir()
+        (entry / "site.local.toml").write_text('[site]\nhostname = "Dash.Example.Test"\n')
+        monkeypatch.setenv("PORTFOLIO_SITE_DIR", str(entry))
+        monkeypatch.setenv("PORTFOLIO_STORE", str(tmp_path))
+        monkeypatch.delenv("TACHOMETER_ALLOWED_HOSTS", raising=False)
+
+    def test_the_registered_name_is_part_of_the_allowed_set(self, registered, tmp_path):
+        assert server._load_allowed_hosts(tmp_path, ()) == {"dash.example.test"}
+
+    def test_a_request_for_the_registered_name_is_served_without_any_local_config(
+        self, registered, make_server
+    ):
+        httpd = make_server(allowed_hosts=frozenset())
+        assert request(httpd, "GET", "/api/live", "dash.example.test").status == 200
+        assert request(httpd, "GET", "/api/live", "Dash.Example.Test:443").status == 200
+        assert request(httpd, "GET", "/api/live", "evil.example").status == 403
+
+    def test_a_remote_bind_is_enforced_once_the_site_has_a_name(
+        self, registered, monkeypatch, tmp_path
+    ):
+        captured = {}
+
+        class FakeHttpd:
+            def __init__(self, address, handler):
+                captured["handler"] = handler
+
+            def serve_forever(self):
+                raise KeyboardInterrupt
+
+        monkeypatch.setattr(server, "HTTPServer", FakeHttpd)
+        server.serve(tmp_path, host="0.0.0.0", allow_remote=True)
+        assert captured["handler"].enforce_host is True
+        assert captured["handler"].allowed_hosts == {"dash.example.test"}
+
+    def test_the_seam_decides_host_parsing_and_matching(self):
+        from tachometer.portfolio import site
+
+        assert server._host_name("Edge.Example.:443") == site.host_name("Edge.Example.:443")
+        assert server._host_header_allowed({"Host": "a.test"}, frozenset({"a.test"}))
+        assert not server._host_header_allowed({"Host": "b.test"}, frozenset({"a.test"}))
