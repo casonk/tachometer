@@ -1,0 +1,13 @@
+# Copy to config/tachometer/server.local.toml (ignored by Git).
+#
+# The dashboard answers only requests whose Host header is a loopback name (localhost,
+# 127.0.0.0/8, ::1) or one listed here. This stops DNS rebinding: a web page on a hostname
+# that an attacker points at 127.0.0.1 would otherwise be treated as same-origin and could
+# trigger the dashboard's actions. List the name a reverse proxy or the shared Caddy edge
+# forwards (the Host it sends upstream); ports are ignored. The same names can be given with
+# `--allowed-host NAME` or TACHOMETER_ALLOWED_HOSTS (comma separated).
+#
+# A server bound beyond loopback with --allow-remote and no names listed is not checked.
+
+[server]
+allowed_hosts = ["tachometer.example.internal"]

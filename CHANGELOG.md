@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Refuse requests whose `Host` header is not a loopback name or one configured with `--allowed-host`, `TACHOMETER_ALLOWED_HOSTS` or the ignored `config/tachometer/server.local.toml` (see `server.toml.example`). A DNS-rebinding page sent a matching `Host` and `Origin` and was treated as same-origin, reaching the dashboard's state-changing endpoints. **Upgrade note:** a dashboard reached through a reverse proxy that forwards its own hostname as `Host` must list that name or it will get 403; a server bound beyond loopback with `--allow-remote` and no names listed is not checked.
 - Make retention settings safe to hand-edit: a zero, negative, non-numeric or non-integer period in `settings.toml` now means the 365-day default instead of putting the prune cutoff at or after now (which would delete every sample), and a `[retention]` entry that is not a table no longer crashes the loader.
 
 - Re-vendor the portfolio theme fallback: the top bar's theme menu offers This site / Everywhere and "Follow the global theme".
