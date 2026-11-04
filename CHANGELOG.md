@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Make retention settings safe to hand-edit: a zero, negative, non-numeric or non-integer period in `settings.toml` now means the 365-day default instead of putting the prune cutoff at or after now (which would delete every sample), and a `[retention]` entry that is not a table no longer crashes the loader.
+
 - Re-vendor the portfolio theme fallback: the top bar's theme menu offers This site / Everywhere and "Follow the global theme".
 - Answer `/_portfolio/*` itself from a vendored portfolio site seam (`tachometer/portfolio/`), so the theme and top bar work with no Caddy in front: the owner-only site store first, then a pinned fallback copy. Add `/.portfolio` (ignored) and `config/portfolio-site.example.toml`. See traction-control `docs/portfolio-sites.md`.
 
