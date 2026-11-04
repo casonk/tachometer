@@ -40,7 +40,8 @@ def load_settings(path: str | Path) -> dict[str, Any]:
     # Merge defaults for any missing keys.
     merged: dict[str, Any] = {}
     for section, defaults in _DEFAULTS.items():
-        merged[section] = {**defaults, **data.get(section, {})}
+        override = data.get(section)
+        merged[section] = {**defaults, **(override if isinstance(override, dict) else {})}
     return merged
 
 
@@ -56,10 +57,25 @@ def save_settings(path: str | Path, settings: dict[str, Any]) -> None:
     p.write_text("\n".join(lines), encoding="utf-8")
 
 
+def _days(value: Any, default: int = 365) -> int:
+    """A retention period in days; anything unusable or below one day is the default.
+
+    Retention drives deletion: a zero or negative period would put the cutoff at or after
+    now and prune every sample, so a hand-edited value must never be taken at face value.
+    """
+    try:
+        days = int(value)
+    except (TypeError, ValueError, OverflowError):
+        return default
+    return days if days >= 1 else default
+
+
 def retention(settings: dict[str, Any]) -> dict[str, int]:
     r = settings.get("retention", _DEFAULTS["retention"])
+    if not isinstance(r, dict):
+        r = _DEFAULTS["retention"]
     return {
-        "sample_days": int(r.get("sample_days", 365)),
-        "run_days": int(r.get("run_days", 365)),
-        "backlog_resolved_days": int(r.get("backlog_resolved_days", 365)),
+        "sample_days": _days(r.get("sample_days", 365)),
+        "run_days": _days(r.get("run_days", 365)),
+        "backlog_resolved_days": _days(r.get("backlog_resolved_days", 365)),
     }
