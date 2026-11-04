@@ -18,6 +18,7 @@ from __future__ import annotations
 import contextlib
 import ipaddress
 import json
+import os
 import subprocess
 import threading
 import time
@@ -142,6 +143,50 @@ def _validate_bind_host(host: str, *, allow_remote: bool) -> None:
     raise ValueError(
         "Refusing to bind tachometer serve to a non-loopback host without --allow-remote."
     )
+
+
+def _host_name(value: object) -> str:
+    """The lower-case hostname in a ``Host`` value, without port, brackets or trailing dot."""
+    text = str(value or "").strip().lower()
+    if text.startswith("["):
+        end = text.find("]")
+        if end == -1:
+            return ""
+        return text[1:end]
+    return text.rsplit(":", 1)[0].rstrip(".") if text.count(":") == 1 else text.rstrip(".")
+
+
+def _host_header_allowed(headers: Any, allowed_hosts: frozenset[str]) -> bool:
+    """True when the request's own ``Host`` is a loopback name or one that was configured.
+
+    This is what stops DNS rebinding: a page on an attacker's hostname that resolves to
+    127.0.0.1 sends that hostname as ``Host`` (and as ``Origin``), so the Origin comparison
+    alone cannot tell it from a genuine request. Only ``Host`` is consulted; forwarded
+    headers come from the edge and are never enough to authorise a request.
+    """
+    name = _host_name(_first_header_value(headers.get("Host", "")))
+    return bool(name) and (_is_loopback_host(name) or name in allowed_hosts)
+
+
+def _load_allowed_hosts(tachometer_root: Path, extra: Any = ()) -> frozenset[str]:
+    """Extra hostnames (besides loopback) the dashboard answers to.
+
+    From ``--allowed-host``, ``TACHOMETER_ALLOWED_HOSTS`` (comma separated) and the ignored
+    ``config/tachometer/server.local.toml`` (``[server] allowed_hosts = [...]``), so the
+    private edge's name never appears in a tracked file. A malformed file adds nothing.
+    """
+    names: list[str] = [str(item) for item in extra]
+    names += os.environ.get("TACHOMETER_ALLOWED_HOSTS", "").split(",")
+    path = tachometer_root / "config" / "tachometer" / "server.local.toml"
+    if path.exists():
+        with contextlib.suppress(Exception):
+            section = tomllib.loads(path.read_text(encoding="utf-8")).get("server")
+            configured = section.get("allowed_hosts") if isinstance(section, dict) else None
+            if isinstance(configured, str):
+                configured = [configured]
+            if isinstance(configured, list):
+                names += [item for item in configured if isinstance(item, str)]
+    return frozenset(filter(None, (_host_name(name) for name in names)))
 
 
 def _same_origin_request(headers: Any) -> bool:
@@ -1923,7 +1968,20 @@ class _Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
+    # Hostnames besides loopback that this server answers to, and whether to check at all.
+    allowed_hosts: frozenset[str] = frozenset()
+    enforce_host: bool = True
+
+    def _host_refused(self) -> bool:
+        """Answer 403 and return True when the request's Host is not expected."""
+        if not self.enforce_host or _host_header_allowed(self.headers, self.allowed_hosts):
+            return False
+        self._send("Forbidden: unexpected Host header", "text/plain", 403)
+        return True
+
     def do_GET(self) -> None:
+        if self._host_refused():
+            return
         if self.path.startswith("/_portfolio/"):
             self._send_portfolio()
             return
@@ -1997,6 +2055,8 @@ class _Handler(BaseHTTPRequestHandler):
             self._send("Not Found", "text/plain", 404)
 
     def do_POST(self) -> None:
+        if self._host_refused():
+            return
         if not _same_origin_request(self.headers):
             self._send("Forbidden", "text/plain", 403)
             return
@@ -2082,9 +2142,11 @@ def serve(
     host_summary_path: Path | None = None,
     port: int = 5100,
     allow_remote: bool = False,
+    allowed_hosts: Any = (),
 ) -> None:
     """Start the dashboard HTTP server (blocking)."""
     _validate_bind_host(host, allow_remote=allow_remote)
+    hosts = _load_allowed_hosts(tachometer_root, allowed_hosts)
     handler = type(
         "Handler",
         (_Handler,),
@@ -2093,6 +2155,10 @@ def serve(
             "host_summary_path": host_summary_path
             or (tachometer_root / ".tachometer" / "host-summary.json"),
             "port": port,
+            "allowed_hosts": hosts,
+            # A server bound beyond loopback cannot know the names it is reached by, so it is
+            # only checked once the operator has listed them.
+            "enforce_host": not (allow_remote and not hosts),
         },
     )
     httpd = HTTPServer((host, port), handler)

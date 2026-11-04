@@ -193,6 +193,7 @@ def _serve(args: argparse.Namespace) -> int:
         host_summary_path=manifest.host_summary_path,
         port=args.port,
         allow_remote=args.allow_remote,
+        allowed_hosts=tuple(args.allowed_host or ()),
     )
     return 0
 
@@ -277,6 +278,14 @@ def build_parser() -> argparse.ArgumentParser:
     serve_parser.add_argument("--host", default="127.0.0.1")
     serve_parser.add_argument("--port", type=int, default=5100)
     serve_parser.add_argument("--allow-remote", action="store_true")
+    serve_parser.add_argument(
+        "--allowed-host",
+        action="append",
+        default=[],
+        metavar="NAME",
+        help="Extra Host name the dashboard answers to besides loopback (repeatable); "
+        "see config/tachometer/server.toml.example.",
+    )
     serve_parser.set_defaults(func=_serve)
 
     return parser

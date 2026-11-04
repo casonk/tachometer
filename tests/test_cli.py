@@ -126,9 +126,10 @@ def test_cli_serve_uses_loopback_host_by_default(tmp_path: Path):
     manifest_path = _write_manifest(tmp_path)
     captured: dict[str, object] = {}
 
-    def fake_serve(repo_root, *, host, host_summary_path, port, allow_remote):
+    def fake_serve(repo_root, *, host, host_summary_path, port, allow_remote, allowed_hosts):
         captured.update(
             {
+                "allowed_hosts": allowed_hosts,
                 "repo_root": repo_root,
                 "host": host,
                 "host_summary_path": host_summary_path,
@@ -144,6 +145,7 @@ def test_cli_serve_uses_loopback_host_by_default(tmp_path: Path):
     assert captured["host"] == "127.0.0.1"
     assert captured["port"] == 5100
     assert captured["allow_remote"] is False
+    assert captured["allowed_hosts"] == ()
 
 
 @pytest.mark.unit
@@ -151,7 +153,7 @@ def test_cli_serve_allows_explicit_remote_bind(tmp_path: Path):
     manifest_path = _write_manifest(tmp_path)
     captured: dict[str, object] = {}
 
-    def fake_serve(repo_root, *, host, host_summary_path, port, allow_remote):
+    def fake_serve(repo_root, *, host, host_summary_path, port, allow_remote, allowed_hosts):
         captured.update({"host": host, "allow_remote": allow_remote})
 
     with AttrPatch(_server_mod, serve=fake_serve):
@@ -169,3 +171,28 @@ def test_cli_serve_allows_explicit_remote_bind(tmp_path: Path):
     assert rc == 0
     assert captured["host"] == "0.0.0.0"
     assert captured["allow_remote"] is True
+
+
+@pytest.mark.unit
+def test_cli_serve_passes_each_allowed_host(tmp_path: Path):
+    manifest_path = _write_manifest(tmp_path)
+    captured: dict[str, object] = {}
+
+    def fake_serve(repo_root, *, host, host_summary_path, port, allow_remote, allowed_hosts):
+        captured["allowed_hosts"] = allowed_hosts
+
+    with AttrPatch(_server_mod, serve=fake_serve):
+        rc = main(
+            [
+                "serve",
+                "--manifest",
+                str(manifest_path),
+                "--allowed-host",
+                "a.internal",
+                "--allowed-host",
+                "b.internal",
+            ]
+        )
+
+    assert rc == 0
+    assert captured["allowed_hosts"] == ("a.internal", "b.internal")

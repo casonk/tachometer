@@ -4,7 +4,7 @@ All originally-planned items are now implemented.
 
 ## Open
 
-- [ ] **Reject unexpected `Host` headers on the dashboard.** `_same_origin_request` compares `Origin` with the request's own `Host`, so a DNS-rebinding page (attacker hostname resolving to 127.0.0.1) sends matching `Host` and `Origin` and is treated as same-origin, which reaches the state-changing POSTs (`/api/run-all`, `/admin/settings`, `/thermal/limiters`). Add an allowed-host list (loopback names by default; the private edge's name via config) and refuse other `Host` values.
+- [x] **Reject unexpected `Host` headers on the dashboard.** `_same_origin_request` compares `Origin` with the request's own `Host`, so a DNS-rebinding page (attacker hostname resolving to 127.0.0.1) sends matching `Host` and `Origin` and is treated as same-origin, which reaches the state-changing POSTs (`/api/run-all`, `/admin/settings`, `/thermal/limiters`). Add an allowed-host list (loopback names by default; the private edge's name via config) and refuse other `Host` values. (done: `_host_header_allowed`, `--allowed-host`)
 
 ## Implemented
 
