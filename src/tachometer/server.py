@@ -146,14 +146,10 @@ def _validate_bind_host(host: str, *, allow_remote: bool) -> None:
 
 
 def _host_name(value: object) -> str:
-    """The lower-case hostname in a ``Host`` value, without port, brackets or trailing dot."""
-    text = str(value or "").strip().lower()
-    if text.startswith("["):
-        end = text.find("]")
-        if end == -1:
-            return ""
-        return text[1:end]
-    return text.rsplit(":", 1)[0].rstrip(".") if text.count(":") == 1 else text.rstrip(".")
+    """The lower-case hostname in a ``Host`` value (shared portfolio seam)."""
+    from tachometer.portfolio import site
+
+    return site.host_name(value)
 
 
 def _host_header_allowed(headers: Any, allowed_hosts: frozenset[str]) -> bool:
@@ -162,20 +158,25 @@ def _host_header_allowed(headers: Any, allowed_hosts: frozenset[str]) -> bool:
     This is what stops DNS rebinding: a page on an attacker's hostname that resolves to
     127.0.0.1 sends that hostname as ``Host`` (and as ``Origin``), so the Origin comparison
     alone cannot tell it from a genuine request. Only ``Host`` is consulted; forwarded
-    headers come from the edge and are never enough to authorise a request.
+    headers come from the edge and are never enough to authorise a request. The check itself
+    is the portfolio seam's ``host_allowed``.
     """
-    name = _host_name(_first_header_value(headers.get("Host", "")))
-    return bool(name) and (_is_loopback_host(name) or name in allowed_hosts)
+    from tachometer.portfolio import site
+
+    return site.host_allowed(headers.get("Host", ""), allowed_hosts)
 
 
 def _load_allowed_hosts(tachometer_root: Path, extra: Any = ()) -> frozenset[str]:
     """Extra hostnames (besides loopback) the dashboard answers to.
 
-    From ``--allowed-host``, ``TACHOMETER_ALLOWED_HOSTS`` (comma separated) and the ignored
-    ``config/tachometer/server.local.toml`` (``[server] allowed_hosts = [...]``), so the
-    private edge's name never appears in a tracked file. A malformed file adds nothing.
+    This site's registered hostname (and ``PORTFOLIO_ALLOWED_HOSTS``) from the portfolio site
+    store, plus ``--allowed-host``, ``TACHOMETER_ALLOWED_HOSTS`` (comma separated) and the
+    ignored ``config/tachometer/server.local.toml`` (``[server] allowed_hosts = [...]``) for
+    anything else, so the private edge's name never appears in a tracked file. A malformed
+    file adds nothing.
     """
     names: list[str] = [str(item) for item in extra]
+    names += sorted(_portfolio_site().allowed_hosts())
     names += os.environ.get("TACHOMETER_ALLOWED_HOSTS", "").split(",")
     path = tachometer_root / "config" / "tachometer" / "server.local.toml"
     if path.exists():
@@ -1974,7 +1975,9 @@ class _Handler(BaseHTTPRequestHandler):
 
     def _host_refused(self) -> bool:
         """Answer 403 and return True when the request's Host is not expected."""
-        if not self.enforce_host or _host_header_allowed(self.headers, self.allowed_hosts):
+        # The site's own names are re-read per request, so a store change needs no restart.
+        allowed = self.allowed_hosts | _portfolio_site().allowed_hosts()
+        if not self.enforce_host or _host_header_allowed(self.headers, allowed):
             return False
         self._send("Forbidden: unexpected Host header", "text/plain", 403)
         return True
