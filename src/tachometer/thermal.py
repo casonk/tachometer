@@ -750,7 +750,7 @@ _PAGE = """<!doctype html>
  --good:var(--green);--warning:var(--yellow);--critical:var(--red);--none:var(--muted)}
 *{box-sizing:border-box}
 body{margin:0;padding:20px 16px 40px;background:var(--plane);color:var(--ink);
- font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;font-size:14px}
+ font-family:var(--font,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif);font-size:var(--font-size,14px)}
 main{max-width:1000px;margin:0 auto}
 h1{font-size:1.25rem;margin:0 0 2px}
 h2{font-size:.95rem;margin:0 0 2px}
