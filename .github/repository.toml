@@ -4,6 +4,7 @@
 [repository]
 # One line shown on GitHub. Keep it free of private repository names and local paths.
 description = "Shared repo and resource profiling helpers: resource snapshots, sample history, command profiling, and JSON summaries."
+topics = ["profiling", "benchmarking", "system-monitoring", "python", "devops", "resources"]
 
 [main_branch]
 # Direct commits and pushes to main are refused unless this is true.
