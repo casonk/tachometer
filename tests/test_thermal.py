@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from datetime import UTC
 from pathlib import Path
 
 from tachometer import thermal
@@ -428,9 +429,9 @@ def test_linux_sample_never_calls_the_macos_tools(tmp_path):
 
 
 def _powermetrics_file(tmp_path, *, age_seconds: int, **fields):
-    from datetime import datetime, timezone
+    from datetime import datetime
 
-    taken = datetime.fromtimestamp(1_000_000 - age_seconds, tz=timezone.utc)
+    taken = datetime.fromtimestamp(1_000_000 - age_seconds, tz=UTC)
     record = {"taken_at": taken.isoformat(), **fields}
     path = tmp_path / "powermetrics.jsonl"
     path.write_text(json.dumps(record) + "\n", encoding="utf-8")

@@ -7,7 +7,7 @@ name = "tachometer"
 version = "0.1.0"
 description = "Shared repo and resource profiling helpers for portfolio repos."
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 license = { text = "MIT" }
 authors = [
   { name = "Cason Konzer", email = "casonk@umich.edu" },
@@ -57,11 +57,11 @@ markers = [
 
 [tool.black]
 line-length = 100
-target-version = ["py310"]
+target-version = ["py311"]
 
 [tool.ruff]
 line-length = 100
-target-version = "py310"
+target-version = "py311"
 
 [tool.ruff.format]
 quote-style = "double"

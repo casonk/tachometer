@@ -25,7 +25,7 @@ import plistlib
 import subprocess
 import sys
 import tempfile
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 POWERMETRICS = "/usr/bin/powermetrics"
@@ -92,7 +92,7 @@ def reduce_sample(data: dict[str, Any], samplers) -> dict[str, Any]:
     fan = _number(smc.get("fan"))
     pressure = data.get("thermal_pressure")
     return {
-        "taken_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        "taken_at": datetime.now(UTC).isoformat(timespec="seconds"),
         "samplers": list(samplers),
         "thermal_pressure": pressure if isinstance(pressure, str) else None,
         "cpu_die_c": _number(smc.get("cpu_die")),
