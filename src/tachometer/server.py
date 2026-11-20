@@ -23,7 +23,7 @@ import subprocess
 import threading
 import time
 import zipfile
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 from typing import Any
@@ -80,9 +80,7 @@ _RUN_LOG_ARCHIVE_COUNT = 10
 def _run_log_bundle_path(archive_dir: Path, archived_log: Path) -> Path:
     date_part = archived_log.stem.split("-", 2)[-1][:8]
     if len(date_part) != 8 or not date_part.isdigit():
-        date_part = datetime.fromtimestamp(archived_log.stat().st_mtime, timezone.utc).strftime(
-            "%Y%m%d"
-        )
+        date_part = datetime.fromtimestamp(archived_log.stat().st_mtime, UTC).strftime("%Y%m%d")
     return archive_dir / "bundles" / f"run-all-{date_part}.zip"
 
 
@@ -111,7 +109,7 @@ def _archive_run_log(log_path: Path, *, keep: int = _RUN_LOG_ARCHIVE_COUNT) -> P
 
     archive_dir = log_path.parent / "logs"
     archive_dir.mkdir(parents=True, exist_ok=True)
-    stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
     archive_path = archive_dir / f"{log_path.stem}-{stamp}{log_path.suffix}"
     counter = 1
     while archive_path.exists():
