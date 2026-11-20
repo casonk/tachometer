@@ -106,3 +106,7 @@ providers or kernel drivers, and the payoff does not justify that surface.
   region so it no longer expands the page beyond the viewport.
 
 - [x] [manual:2026-10-18] **Benchmark suite (longer, repeatable)** — `tachometer bench` with weekly short / monthly mid / quarterly full tiers, nightly timer template, guardrails (quiet window, streaming check, upscaler paused, idle check, 78/72 °C stage stops with cool-down, lock, low priority, read-only), history in `.tachometer/bench-history.jsonl` and a Benchmarks card on `/thermal`. Follow-ups: charts of the history over time; fio-based random I/O if fio is installed.
+
+## Pending
+
+- [ ] [codecov:2026-11-20] **Raise patch coverage on PR #58: 66.6667% patched, 1 changed lines have no test coverage.** Files: src/tachometer/server.py (1 missing, 66.66%). Add tests for the uncovered lines. (codecov-pr:58, https://github.com/casonk/tachometer/pull/58#issuecomment-7048948548)
