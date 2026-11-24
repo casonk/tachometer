@@ -27,8 +27,10 @@ CLAUDE.md
 config/clockwork/portfolio-server.toml
 config/clockwork/portfolio-snapshot.toml
 config/clockwork/host-sampler.toml
+config/clockwork/service-latency.toml
 config/clockwork/bench.toml
 config/tachometer/bench.local.toml
+config/tachometer/service-latency.local.toml
 config/tachometer/server.local.toml
 
 # Local-only downstream inventory: may name private repositories, which the

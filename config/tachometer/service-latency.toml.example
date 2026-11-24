@@ -1,0 +1,35 @@
+# Per-service latency settings (tachometer service-latency). Copy to
+# config/tachometer/service-latency.local.toml (gitignored). Plain settings
+# come first: keys after a [table] header belong to that table.
+
+# Probes per service per run; the median and p95 of their reply times are stored.
+samples = 5
+timeout_seconds = 5.0
+
+# Alert when the median reply is more than `factor` times the median of the last
+# `baseline_runs` healthy runs AND slower by at least `min_delta_ms`; or when a
+# service fails (refused connection, timeout, HTTP 5xx) `consecutive` runs in a row.
+# An alert fires when a service turns bad and once when it recovers.
+factor = 2.0
+min_delta_ms = 200
+baseline_runs = 20
+consecutive = 2
+keep_days = 90
+
+# Optional: take every service that has a loopback port from a wiring-harness registry
+# (services.toml, merged with services.local.toml). [[services]] entries below override it.
+# registry = "~/git/util-repos/wiring-harness/services.toml"
+
+# Names to leave out of the registry list: entries that are not HTTP (an RDP port) or not on loopback.
+# exclude = ["example-rdp"]
+
+# Probes carry no credentials. A gated site answers with its login redirect, which is the
+# reply time that matters; any status below 500 counts as replying.
+[[services]]
+name = "example-web"
+port = 8080
+path = "/"
+# Optional systemd unit: lets `startup` count from the unit's own start time.
+unit = "example-web.service"
+# Optional extra request headers, such as a Host header for a virtual host.
+# headers = { Host = "example.home.internal" }

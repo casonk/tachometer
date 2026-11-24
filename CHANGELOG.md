@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Add `tachometer service-latency` (`probe` and `startup`): per-service connect, reply (p50/p95) and time-to-ready measurements on loopback, a pruned history in `.tachometer/service-latency.jsonl`, and transition-only alerts for regressions and repeated failures through the existing shock-relay notify settings. Portable (standard library only). See `config/tachometer/service-latency.toml.example`.
 - Match the portfolio type scale: take the font, size and monospace stack from the shared theme tokens (`--font`, `--font-size`, `--mono`) so the top bar's font choice applies here, and keep the page heading at the home page's scale.
 - Take the dashboard's Host check from the shared portfolio site seam (re-vendored): the site's registered hostname (and `PORTFOLIO_ALLOWED_HOSTS`) are allowed automatically, so a proxied dashboard no longer needs `config/tachometer/server.local.toml`; that file, `TACHOMETER_ALLOWED_HOSTS` and `--allowed-host` still add names. A server bound beyond loopback is now checked once the site has a registered name.
 

@@ -1,0 +1,25 @@
+# Per-service latency probe: one short run every five minutes, charted from
+# .tachometer/service-latency.jsonl and alerting through the manifest's [notify] settings.
+#
+# Render to config/clockwork/service-latency.toml (gitignored): replace __REPO_ROOT__ with the
+# local tachometer checkout path, then install through the shared scheduler:
+#   clockwork install --manifest config/clockwork/service-latency.toml --target systemd-user
+#
+# The job opens loopback sockets only and needs no privileges. It sends no credentials.
+
+[[jobs]]
+name = "tachometer-service-latency"
+description = "Probe per-service connect and reply latency and alert on regressions"
+scope = "user"
+service_type = "oneshot"
+working_directory = "__REPO_ROOT__"
+exec_start = "/usr/bin/env bash __REPO_ROOT__/scripts/probe_service_latency.sh"
+standard_output = "journal"
+standard_error = "journal"
+timer_description = "Probe service latency every five minutes"
+
+[jobs.timer]
+kind = "calendar"
+on_calendar = "*:0/5"
+persistent = false
+accuracy_sec = "30"
