@@ -20,6 +20,9 @@ keep_days = 90
 # (services.toml, merged with services.local.toml). [[services]] entries below override it.
 # registry = "~/git/util-repos/wiring-harness/services.toml"
 
+# Names to leave out of the registry list: entries that are not HTTP (an RDP port) or not on loopback.
+# exclude = ["example-rdp"]
+
 # Probes carry no credentials. A gated site answers with its login redirect, which is the
 # reply time that matters; any status below 500 counts as replying.
 [[services]]

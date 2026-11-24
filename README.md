@@ -298,7 +298,9 @@ tachometer service-latency startup --service pin-gate --manifest config/tachomet
   slower and at least `min_delta_ms` slower, or failing `consecutive` runs in a row. One alert fires when a service
   turns bad and one when it recovers, through the manifest's `[notify]` shock-relay settings.
 
-Run `probe` from a timer (see Clockwork) every few minutes.
+Run `probe` from a timer every five minutes: render `config/clockwork/service-latency.toml.template` to
+`config/clockwork/service-latency.toml` and `clockwork install --manifest config/clockwork/service-latency.toml
+--target systemd-user`. `exclude = [...]` leaves out registry entries that are not HTTP on loopback.
 
 ## Disk Pressure Response
 

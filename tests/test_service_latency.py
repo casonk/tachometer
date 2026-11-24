@@ -261,3 +261,13 @@ def test_cli_probe_and_startup(tmp_path, server, capsys):
     assert json.loads(capsys.readouterr().out)["ready"] is True
     with pytest.raises(SystemExit):
         main(["service-latency", "startup", "--manifest", str(manifest), "--service", "nope"])
+
+
+def test_exclude_drops_registry_entries(tmp_path):
+    registry = tmp_path / "services.toml"
+    registry.write_text(
+        '[[services]]\nname = "a"\nport = 8001\n[[services]]\nname = "rdp"\nport = 3389\n'
+    )
+    cfg = tmp_path / sl.CONFIG_NAME
+    cfg.write_text(f'registry = "{registry}"\nexclude = ["rdp"]\n')
+    assert [s.name for s in sl.load_config(cfg)["services"]] == ["a"]

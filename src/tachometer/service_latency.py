@@ -117,6 +117,8 @@ def load_config(path: Path) -> dict[str, Any]:
             unit=str(raw.get("unit", "")),
             headers={str(k): str(v) for k, v in dict(raw.get("headers", {})).items()},
         )
+    for name in data.get("exclude", []):
+        services.pop(str(name), None)
     notify = data.get("notify") if isinstance(data.get("notify"), dict) else {}
     return {"settings": settings, "services": list(services.values()), "notify": notify}
 
