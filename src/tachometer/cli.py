@@ -4,6 +4,7 @@ import argparse
 import json
 from collections.abc import Sequence
 from dataclasses import asdict
+from pathlib import Path
 
 from .agent_usage import collect_agent_utilization
 from .backlog import prune_resolved_backlog, update_backlog
@@ -92,6 +93,29 @@ def _bench(args: argparse.Namespace) -> int:
     if not args.auto and not args.tier:
         raise SystemExit("bench: give --tier short|mid|full, or --auto for the nightly timer")
     return bench.main(manifest.repo_root, args.tier, auto=args.auto)
+
+
+def _service_latency(args: argparse.Namespace) -> int:
+    from . import service_latency as sl
+
+    manifest = load_manifest(args.manifest)
+    config = sl.load_config(Path(args.manifest).parent / sl.CONFIG_NAME)
+    if args.action == "startup":
+        wanted = [s for s in config["services"] if s.name == args.service]
+        if not wanted:
+            raise SystemExit(
+                f"service-latency: no service named {args.service!r} in {sl.CONFIG_NAME}"
+            )
+        result = sl.measure_startup(wanted[0], timeout=args.timeout)
+        print(json.dumps(result, indent=2))
+        return 0 if result["ready"] else 1
+    if not config["services"]:
+        raise SystemExit(f"service-latency: no services configured; see {sl.CONFIG_NAME}.example")
+    result = sl.run_probe(manifest.repo_root, config)
+    entries = sl.alert_messages(result["events"], result["records"])
+    _maybe_notify(manifest, entries)
+    print(json.dumps(result, indent=2, sort_keys=True))
+    return 0
 
 
 def _host_snapshot(args: argparse.Namespace) -> int:
@@ -248,6 +272,20 @@ def build_parser() -> argparse.ArgumentParser:
         help="Nightly mode: run the most overdue tier, only inside 02:00-05:00",
     )
     bench_parser.set_defaults(func=_bench)
+
+    latency_parser = subparsers.add_parser(
+        "service-latency",
+        help="Probe per-service listen/ready/reply latency and alert on regressions",
+    )
+    latency_parser.add_argument("action", choices=["probe", "startup"])
+    latency_parser.add_argument("--manifest", required=True)
+    latency_parser.add_argument(
+        "--service", help="startup: the service to time (run right after a restart)"
+    )
+    latency_parser.add_argument(
+        "--timeout", type=float, default=120.0, help="startup: give up after this many seconds"
+    )
+    latency_parser.set_defaults(func=_service_latency)
 
     agent_utilization_parser = subparsers.add_parser(
         "agent-utilization",
