@@ -332,8 +332,18 @@ def update_alert_state(
 
 
 def run_probe(
-    root: Path, config: dict[str, Any], *, now: float | None = None, probe=probe_once
+    root: Path,
+    config: dict[str, Any],
+    *,
+    now: float | None = None,
+    probe=probe_once,
+    alerts: bool = True,
 ) -> dict[str, Any]:
+    """Probe every service and append the records.
+
+    ``alerts=False`` (a manual run from the dashboard) leaves the alert state alone, so the next
+    scheduled run still sees a change and sends the notification instead of it being swallowed here.
+    """
     settings = config["settings"]
     now = time.time() if now is None else now
     history = load_history(history_path(root))
@@ -346,7 +356,7 @@ def run_probe(
         record["alert"] = reason if status == "bad" else ""
         records.append(record)
     append_history(history_path(root), records, keep_days=settings["keep_days"], now=now)
-    events = update_alert_state(state_path(root), verdicts)
+    events = update_alert_state(state_path(root), verdicts) if alerts else []
     return {"records": records, "events": events}
 
 
@@ -415,6 +425,25 @@ def summary_line(records: list[dict[str, Any]], events: list[tuple[str, str, str
         parts.append(f"slowest {slowest['name']} p50 {slowest['reply_p50_ms']:.0f} ms")
     parts.extend(f"ALERT {kind} {name}: {reason or 'ok'}" for name, kind, reason in events)
     return "service-latency: " + "; ".join(parts)
+
+
+STARTUP_NAME = "service-startup.jsonl"
+
+
+def startup_path(root: Path) -> Path:
+    return root / ".tachometer" / STARTUP_NAME
+
+
+def record_startup(root: Path, result: dict[str, Any], *, now: float, keep: int = 200) -> None:
+    """Append one ``measure_startup`` result, keeping the newest ``keep``."""
+    path = startup_path(root)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    kept = load_history(path)[-(keep - 1) :] + [{"ts": now, **result}]
+    temporary = path.with_name(path.name + ".tmp")
+    temporary.write_text(
+        "".join(json.dumps(r, sort_keys=True) + "\n" for r in kept), encoding="utf-8"
+    )
+    temporary.replace(path)
 
 
 def alert_messages(

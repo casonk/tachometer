@@ -1835,6 +1835,7 @@ def _render_dashboard(
   Portfolio resource monitor &middot; auto-refreshes every 60 s &middot;
   <a href="/api/status">JSON API</a> &middot;
   <a href="/thermal">Thermal history</a> &middot;
+  <a href="/latency">Service latency</a> &middot;
   <a href="/admin">Admin</a>
 </div>
 <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;flex-wrap:wrap;gap:8px">
@@ -2019,6 +2020,23 @@ class _Handler(BaseHTTPRequestHandler):
                 )
             return
 
+        if parsed.path in ("/latency", "/api/latency"):
+            from . import latency_page
+
+            root = self.__class__.tachometer_root
+            if parsed.path == "/latency":
+                message = qs.get("msg", [""])[0][:300] or None
+                self._send(
+                    latency_page.render_page(
+                        root, message=message, message_ok=qs.get("ok") == ["1"]
+                    )
+                )
+            else:
+                self._send(
+                    json.dumps(latency_page.build_payload(root), indent=2), "application/json"
+                )
+            return
+
         if parsed.path == "/admin":
             saved = "saved" in qs
             self._send(_render_admin_page(self.__class__.tachometer_root, saved=bool(saved)))
@@ -2069,6 +2087,20 @@ class _Handler(BaseHTTPRequestHandler):
             # Redirect back to dashboard (303 See Other so browser does a GET)
             self.send_response(303)
             self.send_header("Location", f"/?view={view}")
+            self.end_headers()
+        elif parsed.path in ("/latency/probe", "/latency/startup"):
+            from . import latency_page
+
+            length = min(int(self.headers.get("Content-Length", "0")), 4096)
+            form = parse_qs(self.rfile.read(length).decode("utf-8") if length else "")
+            root = self.__class__.tachometer_root
+            if parsed.path == "/latency/probe":
+                ok, message = latency_page.start_probe(root)
+            else:
+                ok, message = latency_page.start_startup(root, form.get("service", [""])[0])
+            query = urlencode({"msg": message, "ok": "1" if ok else "0"})
+            self.send_response(303)
+            self.send_header("Location", f"/latency?{query}")
             self.end_headers()
         elif parsed.path == "/thermal/limiters":
             length = int(self.headers.get("Content-Length", "0"))

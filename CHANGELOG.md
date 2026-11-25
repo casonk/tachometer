@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Add the dashboard's Service latency page (`/latency`, `/api/latency`): latest reply p50/p95, baseline, trend, alert state and recent startup timings per configured service, with **Probe now** and per-service **Time startup** buttons that run in the background. A manual probe keeps its samples but leaves the alert state to the scheduled run, so a notification is never swallowed.
 - `service-latency probe` now prints one summary line per run (services, failures, slowest, alerts) instead of the full JSON, so the timer's journal stays readable; `--json` prints the records. Registry services default to a unit named `<name>.service`, so records carry `unit_age_s` where that unit exists (user or system scope).
 - Add `tachometer service-latency` (`probe` and `startup`): per-service connect, reply (p50/p95) and time-to-ready measurements on loopback, a pruned history in `.tachometer/service-latency.jsonl`, and transition-only alerts for regressions and repeated failures through the existing shock-relay notify settings. Portable (standard library only). See `config/tachometer/service-latency.toml.example`.
 - Match the portfolio type scale: take the font, size and monospace stack from the shared theme tokens (`--font`, `--font-size`, `--mono`) so the top bar's font choice applies here, and keep the page heading at the home page's scale.
