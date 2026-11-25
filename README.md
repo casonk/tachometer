@@ -287,13 +287,14 @@ tachometer service-latency startup --service pin-gate --manifest config/tachomet
 
 - `probe` makes `samples` TCP connects and HTTP GETs per service on loopback, with no credentials (a gated site's
   login redirect is the reply that matters; status below 500 counts as replying). It appends one record per service
-  (connect and reply p50, reply p95 and max, failures, unit age) to `.tachometer/service-latency.jsonl`, pruned by
+  (connect and reply p50, reply p95 and max, failures, unit age; registry services use a unit named `<name>.service`) to `.tachometer/service-latency.jsonl`, pruned by
   `keep_days`. `registry = "<path>/services.toml"` pulls every service with a loopback port from a wiring-harness
   registry.
 - `startup` polls until the service listens and replies, and counts from the unit's own start time where the platform
   exposes it (`systemctl show` on Linux), so it reports the time to listening and to ready. Start it as the restart
   begins (`sudo systemctl restart X & tachometer service-latency startup --service X ...`). A service that is already
   up when it starts reports `already_ready` and an upper bound, never its uptime as a start-up time.
+- `probe` prints one summary line (`--json` for the records).
 - Alerts compare the median reply with the median of the last `baseline_runs` healthy runs: more than `factor` times
   slower and at least `min_delta_ms` slower, or failing `consecutive` runs in a row. One alert fires when a service
   turns bad and one when it recovers, through the manifest's `[notify]` shock-relay settings.

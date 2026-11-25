@@ -114,7 +114,10 @@ def _service_latency(args: argparse.Namespace) -> int:
     result = sl.run_probe(manifest.repo_root, config)
     entries = sl.alert_messages(result["events"], result["records"])
     _maybe_notify(manifest, entries)
-    print(json.dumps(result, indent=2, sort_keys=True))
+    if args.json:
+        print(json.dumps(result, indent=2, sort_keys=True))
+    else:
+        print(sl.summary_line(result["records"], result["events"]))
     return 0
 
 
@@ -284,6 +287,9 @@ def build_parser() -> argparse.ArgumentParser:
     )
     latency_parser.add_argument(
         "--timeout", type=float, default=120.0, help="startup: give up after this many seconds"
+    )
+    latency_parser.add_argument(
+        "--json", action="store_true", help="probe: print the full records, not one summary line"
     )
     latency_parser.set_defaults(func=_service_latency)
 
