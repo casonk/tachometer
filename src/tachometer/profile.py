@@ -563,6 +563,32 @@ def _load_profile_document(profile_path: Path) -> dict[str, Any]:
     return data
 
 
+_read_cache: dict[str, tuple[tuple[int, int], dict[str, Any]]] = {}
+_read_cache_lock = threading.Lock()
+
+
+def _read_profile_document(profile_path: Path) -> dict[str, Any]:
+    """Read-only view of a profile, re-parsed only when its mtime or size changes.
+
+    The dashboard summarises ~45 profiles per page load, and parsing them was most of its ~100 ms.
+    The result is shared: callers must not modify it (writers use ``_load_profile_document``).
+    """
+    try:
+        info = profile_path.stat()
+    except OSError:
+        return {"samples": [], "runs": []}
+    signature = (info.st_mtime_ns, info.st_size)
+    key = str(profile_path)
+    with _read_cache_lock:
+        cached = _read_cache.get(key)
+    if cached and cached[0] == signature:
+        return cached[1]
+    data = _load_profile_document(profile_path)
+    with _read_cache_lock:
+        _read_cache[key] = (signature, data)
+    return data
+
+
 def append_profile_sample(
     profile_path: str | Path,
     payload: dict[str, Any],
@@ -640,7 +666,7 @@ def summarize_samples(profile_path: str | Path) -> dict[str, Any]:
     if not profile_path.exists():
         return {"sample_count": 0}
 
-    data = _load_profile_document(profile_path)
+    data = _read_profile_document(profile_path)
     samples = data.get("samples", [])
     if not samples:
         return {"sample_count": 0}
@@ -706,7 +732,7 @@ def summarize_delta_pairs(profile_path: str | Path) -> dict[str, Any]:
     if not profile_path.exists():
         return {"pair_count": 0}
 
-    data = _load_profile_document(profile_path)
+    data = _read_profile_document(profile_path)
     samples = data.get("samples", [])
 
     pending_pre: dict[str, dict[str, Any]] = {}
@@ -766,7 +792,7 @@ def summarize_run_records(profile_path: str | Path) -> dict[str, Any]:
     if not profile_path.exists():
         return {"run_count": 0, "qualifying_run_count": 0}
 
-    data = _load_profile_document(profile_path)
+    data = _read_profile_document(profile_path)
     runs = data.get("runs", [])
     qualifying = [r for r in runs if "proc_avg_cpu_percent" in r][-_RUN_WINDOW:]
 
