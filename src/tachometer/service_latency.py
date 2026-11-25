@@ -135,7 +135,7 @@ def services_from_registry(services_toml: Path) -> list[Service]:
             if "name" in raw:
                 by_name.setdefault(raw["name"], {}).update(raw)
     return [
-        Service(name=name, port=int(site["port"]))
+        Service(name=name, port=int(site["port"]), unit=f"{name}.service")
         for name, site in by_name.items()
         if isinstance(site.get("port"), int) and 0 < site["port"] < 65536
     ]
@@ -400,6 +400,21 @@ def measure_startup(
         "time_to_ready_s": round(ready + already_s, 2) if ready is not None else None,
         "since": "unit start" if already_s else "command start",
     }
+
+
+def summary_line(records: list[dict[str, Any]], events: list[tuple[str, str, str]]) -> str:
+    """One journal line per run: how many services, how many failing, the slowest, and any alert."""
+    failing = [r["name"] for r in records if not r["ok"]]
+    timed = [r for r in records if r.get("reply_p50_ms") is not None]
+    slowest = max(timed, key=lambda r: r["reply_p50_ms"]) if timed else None
+    parts = [
+        f"{len(records)} services",
+        f"{len(failing)} failing" + (f" ({', '.join(failing)})" if failing else ""),
+    ]
+    if slowest:
+        parts.append(f"slowest {slowest['name']} p50 {slowest['reply_p50_ms']:.0f} ms")
+    parts.extend(f"ALERT {kind} {name}: {reason or 'ok'}" for name, kind, reason in events)
+    return "service-latency: " + "; ".join(parts)
 
 
 def alert_messages(

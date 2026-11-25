@@ -242,6 +242,9 @@ def test_cli_probe_and_startup(tmp_path, server, capsys):
         f'samples = 1\n[[services]]\nname = "svc"\nport = {httpd.server_address[1]}\n'
     )
     assert main(["service-latency", "probe", "--manifest", str(manifest)]) == 0
+    line = capsys.readouterr().out
+    assert line.startswith("service-latency: 1 services; 0 failing") and "\n" not in line.strip()
+    assert main(["service-latency", "probe", "--json", "--manifest", str(manifest)]) == 0
     assert json.loads(capsys.readouterr().out)["records"][0]["name"] == "svc"
     assert (
         main(
@@ -271,3 +274,21 @@ def test_exclude_drops_registry_entries(tmp_path):
     cfg = tmp_path / sl.CONFIG_NAME
     cfg.write_text(f'registry = "{registry}"\nexclude = ["rdp"]\n')
     assert [s.name for s in sl.load_config(cfg)["services"]] == ["a"]
+
+
+def test_summary_line_names_failures_slowest_and_alerts():
+    records = [
+        {"name": "a", "ok": True, "reply_p50_ms": 10.0},
+        {"name": "b", "ok": False, "reply_p50_ms": None},
+        {"name": "c", "ok": True, "reply_p50_ms": 900.0},
+    ]
+    line = sl.summary_line(records, [("c", "open", "reply 900 ms vs 100 ms baseline")])
+    assert line == (
+        "service-latency: 3 services; 1 failing (b); slowest c p50 900 ms; ALERT open c: reply 900 ms vs 100 ms baseline"
+    )
+
+
+def test_registry_services_default_to_a_unit_named_after_them(tmp_path):
+    registry = tmp_path / "services.toml"
+    registry.write_text('[[services]]\nname = "clockwork-web"\nport = 5000\n')
+    assert sl.services_from_registry(registry)[0].unit == "clockwork-web.service"
