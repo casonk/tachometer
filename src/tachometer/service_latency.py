@@ -24,6 +24,7 @@ it recovers, never on every run while it stays bad.
 from __future__ import annotations
 
 import contextlib
+import dataclasses
 import http.client
 import json
 import socket
@@ -119,6 +120,11 @@ def load_config(path: Path) -> dict[str, Any]:
         )
     for name in data.get("exclude", []):
         services.pop(str(name), None)
+    # Services whose unit is not "<name>.service": a [units] table maps name -> unit.
+    units = data.get("units") if isinstance(data.get("units"), dict) else {}
+    for name, unit in units.items():
+        if name in services:
+            services[name] = dataclasses.replace(services[name], unit=str(unit))
     notify = data.get("notify") if isinstance(data.get("notify"), dict) else {}
     return {"settings": settings, "services": list(services.values()), "notify": notify}
 

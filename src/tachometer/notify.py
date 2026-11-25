@@ -19,6 +19,7 @@ _SERVICE_SCRIPTS: dict[str, str] = {
     "signal": "services/signal-cli/send_message.py",
     "twilio": "services/twilio/send_sms.py",
     "whatsapp": "services/whatsapp/send_message.py",
+    "gmail": "services/gmail-imap/send_email.py",
 }
 
 
@@ -63,7 +64,11 @@ def send_red_light_alert(
         return False
 
     message = format_alert(entry, repo_name=repo_name)
-    cmd = [sys.executable, str(script), target, message]
+    if service == "gmail":  # send_email.py takes <to> <subject> <body>
+        subject, _, body = message.partition("\n")
+        cmd = [sys.executable, str(script), target, subject, body]
+    else:
+        cmd = [sys.executable, str(script), target, message]
     if config_path:
         cmd += ["--config", config_path]
 
@@ -95,3 +100,35 @@ def notify_new_red_lights(
             config_path=config_path,
             repo_name=repo_name,
         )
+
+
+def send_to_channels(
+    entries: list[dict[str, Any]],
+    *,
+    shock_relay_root: str | Path,
+    channels: list[dict[str, Any]],
+    repo_name: str | None = None,
+) -> list[str]:
+    """Send every entry to every channel; return one line per channel that failed.
+
+    A channel is ``{service, target, config_path?}``.  One channel failing never stops the
+    others, and the caller decides how loudly to report the failures.
+    """
+    failures: list[str] = []
+    for channel in channels:
+        service = str(channel.get("service", ""))
+        target = str(channel.get("target", ""))
+        if not service or not target:
+            failures.append(f"{service or '?'}: channel needs both service and target")
+            continue
+        for entry in entries:
+            if not send_red_light_alert(
+                entry,
+                shock_relay_root=shock_relay_root,
+                service=service,
+                target=target,
+                config_path=channel.get("config_path") or None,
+                repo_name=repo_name,
+            ):
+                failures.append(f"{service}: could not deliver {entry.get('id', 'alert')}")
+    return failures

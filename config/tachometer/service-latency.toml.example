@@ -33,3 +33,16 @@ path = "/"
 unit = "example-web.service"
 # Optional extra request headers, such as a Host header for a virtual host.
 # headers = { Host = "example.home.internal" }
+
+# Services whose systemd unit is not "<name>.service" (found with: ss -ltnp, then the pid's cgroup).
+# Used for unit_age_s and startup timing; user and system units are both looked up.
+# [units]
+# some-web = "some-web-app.service"
+
+# Latency alerts go to every channel; keep real targets in the gitignored local copy.
+# [notify]
+# shock_relay_root = "/path/to/shock-relay"
+# [[notify.channels]]
+# service = "gmail"        # gmail | signal | telegram | twilio | whatsapp
+# target = "you@example.invalid"
+# config_path = "/path/to/shock-relay/services/gmail-imap/config.local.yaml"
