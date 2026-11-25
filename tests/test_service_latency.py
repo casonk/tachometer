@@ -292,3 +292,67 @@ def test_registry_services_default_to_a_unit_named_after_them(tmp_path):
     registry = tmp_path / "services.toml"
     registry.write_text('[[services]]\nname = "clockwork-web"\nport = 5000\n')
     assert sl.services_from_registry(registry)[0].unit == "clockwork-web.service"
+
+
+def test_units_table_maps_a_service_to_its_real_unit(tmp_path):
+    config = tmp_path / "service-latency.toml"
+    config.write_text(
+        '[[services]]\nname = "session-control"\nport = 5420\n'
+        '[[services]]\nname = "other"\nport = 5421\n'
+        '[units]\nsession-control = "session-control-web.service"\nnot-configured = "x.service"\n',
+        encoding="utf-8",
+    )
+    by_name = {s.name: s for s in sl.load_config(config)["services"]}
+    assert by_name["session-control"].unit == "session-control-web.service"
+    assert by_name["other"].unit == ""
+    assert "not-configured" not in by_name
+
+
+def test_send_to_channels_reaches_every_channel_and_reports_failures(tmp_path, monkeypatch):
+    from tachometer import notify
+
+    sent = []
+    monkeypatch.setattr(
+        notify,
+        "send_red_light_alert",
+        lambda entry, **kw: sent.append(kw["service"]) or kw["service"] != "signal",
+    )
+    failures = notify.send_to_channels(
+        [{"id": "service-latency.x", "suggestions": ["x: slow"]}],
+        shock_relay_root=tmp_path,
+        channels=[
+            {"service": "gmail", "target": "a@example.invalid"},
+            {"service": "signal", "target": "+10000000000"},
+            {"service": "signal"},
+        ],
+    )
+    assert sent == ["gmail", "signal"]
+    assert len(failures) == 2 and any("could not deliver" in f for f in failures)
+    assert any("needs both" in f for f in failures)
+
+
+def test_gmail_alert_uses_subject_and_body_arguments(tmp_path, monkeypatch):
+    from tachometer import notify
+
+    script = tmp_path / "services/gmail-imap/send_email.py"
+    script.parent.mkdir(parents=True)
+    script.write_text("", encoding="utf-8")
+    seen = {}
+
+    def fake_run(cmd, **kw):
+        seen["cmd"] = cmd
+
+        class R:
+            returncode = 0
+
+        return R()
+
+    monkeypatch.setattr(notify.subprocess, "run", fake_run)
+    ok = notify.send_red_light_alert(
+        {"id": "service-latency.x", "suggestions": ["x: slow"]},
+        shock_relay_root=tmp_path,
+        service="gmail",
+        target="a@example.invalid",
+    )
+    assert ok and seen["cmd"][2] == "a@example.invalid"
+    assert seen["cmd"][3].startswith("[tachometer] RED") and "x: slow" in seen["cmd"][4]

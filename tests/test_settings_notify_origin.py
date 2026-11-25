@@ -207,7 +207,7 @@ class TestSendAlert:
         assert calls == []
 
     def test_every_known_service_maps_to_a_script_path_under_services(self):
-        assert set(notify._SERVICE_SCRIPTS) == {"telegram", "signal", "twilio", "whatsapp"}
+        assert set(notify._SERVICE_SCRIPTS) == {"telegram", "signal", "twilio", "whatsapp", "gmail"}
         assert all(path.startswith("services/") for path in notify._SERVICE_SCRIPTS.values())
 
     def test_notify_sends_one_alert_per_entry_and_survives_failures(self, tmp_path, monkeypatch):

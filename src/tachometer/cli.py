@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import sys
 from collections.abc import Sequence
 from dataclasses import asdict
 from pathlib import Path
@@ -9,7 +10,7 @@ from pathlib import Path
 from .agent_usage import collect_agent_utilization
 from .backlog import prune_resolved_backlog, update_backlog
 from .manifest import load_manifest
-from .notify import notify_new_red_lights
+from .notify import notify_new_red_lights, send_to_channels
 from .profile import (
     append_profile_sample,
     collect_host_resource_snapshot,
@@ -41,6 +42,32 @@ def _maybe_notify(manifest, newly_opened: list) -> None:
             config_path=manifest.notify_config_path,
             repo_name=manifest.name,
         )
+
+
+def _notify_latency(manifest, notify: dict, entries: list) -> None:
+    """Latency alerts go to every ``[[notify.channels]]`` entry, else to the manifest's [notify].
+
+    Never silent: alerts raised with nowhere to go, and channels that fail, are said on stderr
+    (the journal) so a broken alert path shows up instead of looking like a quiet system.
+    """
+    if not entries:
+        return
+    channels = notify.get("channels") if isinstance(notify.get("channels"), list) else []
+    root = notify.get("shock_relay_root") or manifest.notify_shock_relay_root
+    if channels and root:
+        for failure in send_to_channels(
+            entries, shock_relay_root=root, channels=channels, repo_name=manifest.name
+        ):
+            print(f"service-latency: alert delivery failed: {failure}", file=sys.stderr)
+        return
+    if manifest.notify_shock_relay_root and manifest.notify_service and manifest.notify_target:
+        _maybe_notify(manifest, entries)
+        return
+    print(
+        f"service-latency: {len(entries)} alert(s) raised but no notify channel is configured; "
+        "set [[notify.channels]] in service-latency.local.toml",
+        file=sys.stderr,
+    )
 
 
 def _snapshot(args: argparse.Namespace) -> int:
@@ -113,7 +140,7 @@ def _service_latency(args: argparse.Namespace) -> int:
         raise SystemExit(f"service-latency: no services configured; see {sl.CONFIG_NAME}.example")
     result = sl.run_probe(manifest.repo_root, config)
     entries = sl.alert_messages(result["events"], result["records"])
-    _maybe_notify(manifest, entries)
+    _notify_latency(manifest, config.get("notify", {}), entries)
     if args.json:
         print(json.dumps(result, indent=2, sort_keys=True))
     else:
