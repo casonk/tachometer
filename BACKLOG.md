@@ -109,4 +109,5 @@ providers or kernel drivers, and the payoff does not justify that surface.
 
 ## Pending
 
+- [ ] [codecov:2026-11-25] **Raise patch coverage on PR #64: 72.973% patched, 10 changed lines have no test coverage.** Files: src/tachometer/cli.py (10 missing, 37.5%). Add tests for the uncovered lines. (codecov-pr:64, https://github.com/casonk/tachometer/pull/64#issuecomment-7155208775)
 - [ ] [codecov:2026-11-20] **Raise patch coverage on PR #58: 66.6667% patched, 1 changed lines have no test coverage.** Files: src/tachometer/server.py (1 missing, 66.66%). Add tests for the uncovered lines. (codecov-pr:58, https://github.com/casonk/tachometer/pull/58#issuecomment-7048948548)
