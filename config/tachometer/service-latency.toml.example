@@ -39,6 +39,11 @@ unit = "example-web.service"
 # [units]
 # some-web = "some-web-app.service"
 
+# Services that report how fresh their pages are, shown in the latency page's "Update rate"
+# column. The path must answer 200 with {"summary": "...", "settings": {"NAME": seconds}}.
+# [update_rate]
+# some-web = "/api/update-rate"
+
 # Latency alerts go to every channel; keep real targets in the gitignored local copy.
 # [notify]
 # shock_relay_root = "/path/to/shock-relay"

@@ -79,6 +79,27 @@ def test_page_escapes_names_and_errors(tmp_path):
     assert 'class="dot red"' in page
 
 
+def test_page_shows_each_services_update_rate(tmp_path):
+    path = sl.history_path(tmp_path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    rates = {
+        "reports": {"summary": "pages <b> 60 s old", "settings": {'A"B': 60.0}},
+        "down": {"error": "HTTP 404"},
+        "quiet": None,
+    }
+    path.write_text(
+        "".join(
+            json.dumps({"ts": time.time(), "name": name, "ok": True, "update_rate": rate}) + "\n"
+            for name, rate in rates.items()
+        ),
+        encoding="utf-8",
+    )
+    page = lp.render_page(tmp_path)
+    assert "pages &lt;b&gt; 60 s old" in page and "A&quot;B = 60" in page
+    assert 'title="HTTP 404">unavailable' in page
+    assert '<td class="rate">–</td>' in page
+
+
 def test_page_with_no_history_explains_what_to_do(tmp_path):
     assert "No samples yet" in lp.render_page(tmp_path)
 
@@ -173,6 +194,13 @@ def test_http_routes_and_origin_check(tmp_path, monkeypatch):
             == "svc"
         )
         assert b"/latency" in urllib.request.urlopen(base + "/").read()
+        own = sl.Service(
+            name="dashboard", port=httpd.server_address[1], update_rate_path="/api/update-rate"
+        )
+        assert sl.fetch_update_rate(own, 5.0) == {
+            "summary": "current: files are re-read when they change",
+            "settings": {},
+        }
         assert post("/latency/probe", "https://evil.example").status == 403
         assert started == []
         response = post("/latency/probe", base)
