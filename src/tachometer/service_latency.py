@@ -44,6 +44,8 @@ except ModuleNotFoundError:  # Python 3.10
 HISTORY_NAME = "service-latency.jsonl"
 STATE_NAME = "service-latency-state.json"
 CONFIG_NAME = "service-latency.local.toml"
+RATE_MAX_BYTES = 4096
+RATE_TIMEOUT_S = 2.0
 DEFAULTS: dict[str, Any] = {
     "samples": 5,
     "timeout_seconds": 5.0,
@@ -63,6 +65,7 @@ class Service:
     path: str = "/"
     unit: str = ""  # systemd unit used for its start time, optional
     headers: dict[str, str] = field(default_factory=dict)  # e.g. a Host header for a virtual host
+    update_rate_path: str = ""  # where the service reports how fresh its pages are, optional
 
 
 # --------------------------------------------------------------------------- config
@@ -82,6 +85,11 @@ def _number(value: Any, default: float, *, minimum: float = 0.0) -> float:
     except (TypeError, ValueError, OverflowError):
         return default
     return number if number > minimum else default
+
+
+def _path(value: Any) -> str:
+    """``value`` if it is an absolute URL path, else nothing."""
+    return value if isinstance(value, str) and value.startswith("/") else ""
 
 
 def load_config(path: Path) -> dict[str, Any]:
@@ -117,6 +125,7 @@ def load_config(path: Path) -> dict[str, Any]:
             path=str(raw.get("path", "/")) or "/",
             unit=str(raw.get("unit", "")),
             headers={str(k): str(v) for k, v in dict(raw.get("headers", {})).items()},
+            update_rate_path=_path(raw.get("update_rate_path")),
         )
     for name in data.get("exclude", []):
         services.pop(str(name), None)
@@ -125,6 +134,11 @@ def load_config(path: Path) -> dict[str, Any]:
     for name, unit in units.items():
         if name in services:
             services[name] = dataclasses.replace(services[name], unit=str(unit))
+    # A [update_rate] table maps name -> the path that reports that service's freshness settings.
+    rates = data.get("update_rate") if isinstance(data.get("update_rate"), dict) else {}
+    for name, path in rates.items():
+        if name in services:
+            services[name] = dataclasses.replace(services[name], update_rate_path=_path(path))
     notify = data.get("notify") if isinstance(data.get("notify"), dict) else {}
     return {"settings": settings, "services": list(services.values()), "notify": notify}
 
@@ -211,6 +225,47 @@ def summarize(
         "reply_max_ms": round(max(replies), 2) if replies else None,
         "unit_age_s": unit_age_s,
         "error": errors[0] if errors else "",
+    }
+
+
+# --------------------------------------------------------------------------- update rate
+
+
+def fetch_update_rate(service: Service, timeout: float) -> dict[str, Any]:
+    """The service's own report of how fresh its pages are; never raises.
+
+    ``{"summary": str, "settings": {name: seconds}}``, or ``{"error": str}``.  The service
+    reports the values it is running with, so defaults and fallbacks are never guessed here.
+    """
+    conn = http.client.HTTPConnection(service.host, service.port, timeout=timeout)
+    try:
+        conn.request(
+            "GET",
+            service.update_rate_path,
+            headers={"User-Agent": "tachometer-latency", **service.headers},
+        )
+        response = conn.getresponse()
+        body = response.read(RATE_MAX_BYTES + 1)
+        if response.status != 200:
+            return {"error": f"HTTP {response.status}"}
+        if len(body) > RATE_MAX_BYTES:
+            return {"error": "reply too large"}
+        data = json.loads(body)
+    except (OSError, http.client.HTTPException, ValueError, RecursionError) as exc:
+        return {"error": f"{exc.__class__.__name__}: {exc}"[:200]}
+    finally:
+        conn.close()
+    summary = data.get("summary") if isinstance(data, dict) else None
+    if not isinstance(summary, str) or not summary.strip():
+        return {"error": "reply has no summary"}
+    settings = data.get("settings") if isinstance(data.get("settings"), dict) else {}
+    return {
+        "summary": summary.strip()[:200],
+        "settings": {
+            str(name)[:80]: value
+            for name, value in list(settings.items())[:12]
+            if isinstance(value, (int, float))
+        },
     }
 
 
@@ -344,6 +399,7 @@ def run_probe(
     now: float | None = None,
     probe=probe_once,
     alerts: bool = True,
+    rate=fetch_update_rate,
 ) -> dict[str, Any]:
     """Probe every service and append the records.
 
@@ -360,6 +416,8 @@ def run_probe(
         verdicts[service.name] = evaluate(record, history, settings)
         status, reason = verdicts[service.name]
         record["alert"] = reason if status == "bad" else ""
+        if service.update_rate_path and record["ok"]:
+            record["update_rate"] = rate(service, min(RATE_TIMEOUT_S, settings["timeout_seconds"]))
         records.append(record)
     append_history(history_path(root), records, keep_days=settings["keep_days"], now=now)
     events = update_alert_state(state_path(root), verdicts) if alerts else []

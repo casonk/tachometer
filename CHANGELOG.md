@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- The Service latency page has an **Update rate** column: each probe reads every service's own report of how old its pages can be from the path in the new `[update_rate]` config table; the dashboard reports its own at `/api/update-rate`.
 - The dashboard re-parses a repo profile only when its file changes (mtime and size) instead of on every page load: `gather_repo_data` went from ~134 ms to ~15 ms, which was most of the dashboard's ~108 ms reply time.
 
 - Service latency alerts now go to every `[[notify.channels]]` entry (gmail, signal, telegram, twilio, whatsapp) from `service-latency.local.toml`, and say so on stderr when an alert has no channel or a channel fails, instead of being dropped silently. A `[units]` table maps services whose unit is not `<name>.service`, so `unit_age_s` is filled for them.

@@ -1,4 +1,4 @@
-"""The dashboard's Service latency page: latest reply times, trend, alert state, startup timings.
+"""The dashboard's Service latency page: reply times, trend, alert state, update rate, startups.
 
 Reads the files ``tachometer service-latency`` writes; the buttons start the same probe and
 startup measurement in the background (the dashboard serves one request at a time, and a probe
@@ -84,6 +84,18 @@ def _spark(values: list[Any], bad: bool) -> str:
     )
 
 
+def _rate_cell(rate: Any) -> str:
+    """The update-rate column: the service's own summary, with its settings on hover."""
+    if not isinstance(rate, dict):
+        return '<td class="rate">–</td>'
+    if rate.get("error"):
+        title = html.escape(str(rate["error"]), quote=True)
+        return f'<td class="rate" title="{title}">unavailable</td>'
+    settings = rate.get("settings") if isinstance(rate.get("settings"), dict) else {}
+    title = html.escape("\n".join(f"{k} = {v:g}" for k, v in settings.items()), quote=True)
+    return f'<td class="rate" title="{title}">{html.escape(str(rate.get("summary", "–")))}</td>'
+
+
 def render_page(root: Path, *, message: str | None = None, message_ok: bool = True) -> str:
     data = build_payload(root)
     rows = []
@@ -99,6 +111,7 @@ def render_page(root: Path, *, message: str | None = None, message_ok: bool = Tr
             f"<td>{_ms(latest.get('reply_p50_ms'))}</td><td>{_ms(latest.get('reply_p95_ms'))}</td>"
             f"<td>{_ms(latest.get('connect_p50_ms'))}</td><td>{_ms(service['baseline_ms'])}</td>"
             f"<td>{_spark(service['trend'], light == 'red')}</td>"
+            f"{_rate_cell(latest.get('update_rate'))}"
             f"<td>{'–' if age is None else f'{age / 3600:.1f} h'}</td>"
             f'<td><form method="post" action="/latency/startup"><input type="hidden" name="service" '
             f'value="{html.escape(service["name"], quote=True)}"><button type="submit" title="Wait for this '
@@ -120,7 +133,7 @@ def render_page(root: Path, *, message: str | None = None, message_ok: bool = Tr
         banner = f'<div class="msg">{html.escape(running)} is running; reload in a moment.</div>'
     body = (
         "".join(rows)
-        or '<tr><td colspan="8" class="empty">No samples yet. Run <code>tachometer service-latency probe</code> or press Probe now.</td></tr>'
+        or '<tr><td colspan="9" class="empty">No samples yet. Run <code>tachometer service-latency probe</code> or press Probe now.</td></tr>'
     )
     return (
         _PAGE.replace("__BANNER__", banner)
@@ -201,6 +214,7 @@ h1{font-size:1.25rem;margin:0 0 2px}h2{font-size:.95rem;margin:18px 0 6px}
 table{border-collapse:collapse;width:100%;font-size:.8rem;font-variant-numeric:tabular-nums}
 th,td{text-align:right;padding:5px 8px;border-bottom:1px solid var(--border);white-space:nowrap}
 th:first-child,td:first-child{text-align:left}
+th.rate,td.rate{text-align:left;white-space:normal;min-width:13em}
 .dot{width:9px;height:9px;border-radius:50%;display:inline-block}
 .green{background:var(--green)}.red{background:var(--red)}
 button{font:inherit;padding:4px 12px;border:1px solid var(--text);border-radius:6px;background:var(--text);
@@ -219,12 +233,13 @@ a{color:inherit}code{background:var(--bg);padding:1px 4px;border-radius:3px}
 <form method="post" action="/latency/probe"><button type="submit">Probe now</button></form></div>
 __BANNER__
 <div class="card"><table><thead><tr><th>Service</th><th>Reply p50</th><th>p95</th><th>Connect</th><th>Baseline</th>
-<th>Trend</th><th>Up for</th><th></th></tr></thead><tbody>__ROWS__</tbody></table></div>
+<th>Trend</th><th class="rate">Update rate</th><th>Up for</th><th></th></tr></thead><tbody>__ROWS__</tbody></table></div>
 <h2>Recent startup timings</h2>
 <div class="card"><table><thead><tr><th>When</th><th>Service</th><th>Listening</th><th>Ready</th><th>Counted from</th></tr></thead>
 <tbody>__STARTUPS__</tbody></table></div>
 <p class="sub">Press <b>Time startup</b> right after restarting a service: it waits for the service to listen and reply and
  counts from the unit's own start. Press it on a service that is already up and it reports only an upper bound.
- A manual probe records samples but leaves alerting to the scheduled run.</p>
+ A manual probe records samples but leaves alerting to the scheduled run. <b>Update rate</b> is each service's own report of
+ how old its pages can be, read at the last probe (hover for the settings); – means none is configured.</p>
 </main></body></html>
 """

@@ -1991,6 +1991,11 @@ class _Handler(BaseHTTPRequestHandler):
         qs = parse_qs(parsed.query)
         view = qs.get("view", ["system"])[0]
 
+        if parsed.path == "/api/update-rate":
+            summary = "current: files are re-read when they change"
+            self._send(json.dumps({"summary": summary, "settings": {}}), "application/json")
+            return
+
         if parsed.path == "/api/live":
             self._send(
                 json.dumps(
