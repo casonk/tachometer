@@ -264,7 +264,7 @@ def fetch_update_rate(service: Service, timeout: float) -> dict[str, Any]:
         "settings": {
             str(name)[:80]: value
             for name, value in list(settings.items())[:12]
-            if isinstance(value, (int, float))
+            if isinstance(value, int | float)
         },
     }
 
